@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'home_page.dart';
+import 'screens/splash_screen.dart';
 
 void main() {
   runApp(const MyApp());
@@ -39,7 +39,7 @@ class MyApp extends StatelessWidget {
           onSurface: Color(0xFFF1F5F9),
         ),
       ),
-      home: const HomePage(),
+      home: const SplashScreen(),
     );
   }
 }
