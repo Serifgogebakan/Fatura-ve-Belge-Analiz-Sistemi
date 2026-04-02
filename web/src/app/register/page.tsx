@@ -42,7 +42,7 @@ export default function RegisterPage() {
       } else {
         setSuccessMsg('Hesabınız oluşturuldu! Yönlendiriliyorsunuz...');
         setTimeout(() => {
-          router.push('/');
+          router.push('/dashboard');
         }, 1500);
       }
     } catch (err: any) {

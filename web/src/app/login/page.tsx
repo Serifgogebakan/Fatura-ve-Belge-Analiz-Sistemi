@@ -30,7 +30,7 @@ export default function LoginPage() {
         else if (error.message.includes('rate limit')) msg = 'Çok fazla deneme yapıldı. Lütfen bekleyin.';
         setError(msg);
       } else if (data.session) {
-        router.push('/');
+        router.push('/dashboard');
       }
     } catch (err: any) {
       setError("Bir hata oluştu. Lütfen tekrar deneyin.");
