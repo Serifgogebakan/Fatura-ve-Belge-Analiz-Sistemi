@@ -24,10 +24,13 @@ export default function LoginPage() {
       });
 
       if (error) {
-        setError(error.message);
+        let msg = 'Giriş yapılamadı. Lütfen tekrar deneyin.';
+        if (error.message.includes('Invalid login credentials')) msg = 'E-posta veya şifre hatalı.';
+        else if (error.message.includes('Email not confirmed')) msg = 'E-posta adresiniz henüz doğrulanmamış.';
+        else if (error.message.includes('rate limit')) msg = 'Çok fazla deneme yapıldı. Lütfen bekleyin.';
+        setError(msg);
       } else if (data.session) {
-        // Başarılı giriş
-        router.push("/");
+        router.push('/');
       }
     } catch (err: any) {
       setError("Bir hata oluştu. Lütfen tekrar deneyin.");

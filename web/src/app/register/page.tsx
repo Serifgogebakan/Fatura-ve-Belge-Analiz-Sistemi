@@ -34,13 +34,16 @@ export default function RegisterPage() {
       });
 
       if (error) {
-        setError(error.message);
+        let msg = 'Kayıt sırasında bir hata oluştu.';
+        if (error.message.includes('User already registered')) msg = 'Bu e-posta adresi zaten kayıtlı.';
+        else if (error.message.includes('Password should be')) msg = 'Şifre en az 6 karakter olmalıdır.';
+        else if (error.message.includes('rate limit')) msg = 'Çok fazla deneme yapıldı. Lütfen bekleyin.';
+        setError(msg);
       } else {
-        setSuccessMsg("Kayıt başarılı! Lütfen giriş yapın.");
-        // Gerekirse email doğrulaması gerekiyorsa burada bildirim yapılabilir
+        setSuccessMsg('Hesabınız oluşturuldu! Yönlendiriliyorsunuz...');
         setTimeout(() => {
-          router.push("/login");
-        }, 2000);
+          router.push('/');
+        }, 1500);
       }
     } catch (err: any) {
       setError("Kayıt sırasında bir hata oluştu.");
