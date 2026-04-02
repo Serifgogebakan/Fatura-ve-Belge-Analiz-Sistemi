@@ -16,7 +16,7 @@ export default function HomePage() {
           <div className="w-8 h-8 rounded-lg bg-blue-600 flex items-center justify-center text-white">
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
           </div>
-          <span className="font-bold text-xl tracking-tight hidden sm:block">Akıllı Belge Yönetimi</span>
+          <span className="font-bold text-xl tracking-tight hidden sm:block">Fatura ve Akıllı Belge Yönetimi</span>
         </div>
         <div className="hidden md:flex gap-8 text-sm font-medium text-gray-500 dark:text-gray-400">
           <a href="#ozellikler" className="hover:text-blue-600 dark:hover:text-blue-400 transition-colors">Özellikler</a>
