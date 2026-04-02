@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+import '../main.dart'; // supabase instance
 import 'login_screen.dart';
 import '../home_page.dart';
 
@@ -10,8 +12,72 @@ class RegisterScreen extends StatefulWidget {
 }
 
 class _RegisterScreenState extends State<RegisterScreen> {
+  final _nameController = TextEditingController();
+  final _emailController = TextEditingController();
+  final _passwordController = TextEditingController();
+  
   bool _isPasswordVisible = false;
   bool _agreedToTerms = false;
+  bool _isLoading = false;
+
+  @override
+  void dispose() {
+    _nameController.dispose();
+    _emailController.dispose();
+    _passwordController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _handleRegister() async {
+    if (!_agreedToTerms) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Lütfen kullanım şartlarını kabul edin.')),
+      );
+      return;
+    }
+
+    final name = _nameController.text.trim();
+    final email = _emailController.text.trim();
+    final password = _passwordController.text.trim();
+
+    if (name.isEmpty || email.isEmpty || password.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Tüm alanları doldurmanız gerekmektedir.')),
+      );
+      return;
+    }
+
+    setState(() => _isLoading = true);
+
+    try {
+      final response = await supabase.auth.signUp(
+        email: email,
+        password: password,
+        data: {'full_name': name},
+      );
+
+      if (mounted) {
+        if (response.user != null) {
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(builder: (context) => const HomePage()),
+          );
+        }
+      }
+    } on AuthException catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Beklenmeyen bir hata oluştu.')));
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -26,7 +92,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               const SizedBox(height: 20),
-              // Logo ve Başlık
               Row(
                 children: [
                   Container(
@@ -70,9 +135,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
               ),
               const SizedBox(height: 40),
 
-              // Form
               _buildInputLabel("AD SOYAD", isDark),
               _buildTextField(
+                controller: _nameController,
                 hint: "Ahmet Yılmaz",
                 icon: Icons.person_outline,
                 isDark: isDark,
@@ -81,6 +146,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
               _buildInputLabel("E-POSTA ADRESİ", isDark),
               _buildTextField(
+                controller: _emailController,
                 hint: "a.yilmaz@sirket.com",
                 icon: Icons.email_outlined,
                 keyboardType: TextInputType.emailAddress,
@@ -90,6 +156,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
               _buildInputLabel("ŞİFRE", isDark),
               _buildTextField(
+                controller: _passwordController,
                 hint: "••••••••",
                 icon: Icons.lock_outline,
                 isPassword: true,
@@ -97,7 +164,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
               ),
               const SizedBox(height: 24),
 
-              // Şartlar & Koşullar
               Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -132,33 +198,28 @@ class _RegisterScreenState extends State<RegisterScreen> {
               ),
               const SizedBox(height: 40),
 
-              // Kayıt Butonu
               SizedBox(
                 width: double.infinity,
                 child: ElevatedButton(
-                  onPressed: () {
-                    // Kayıt işlemi başarılı olduğunda Ana Sayfaya yönlen
-                    Navigator.pushReplacement(
-                      context,
-                      MaterialPageRoute(builder: (context) => const HomePage()),
-                    );
-                  },
+                  onPressed: _isLoading ? null : _handleRegister,
                   style: ElevatedButton.styleFrom(
                     backgroundColor: primaryColor,
+                    disabledBackgroundColor: primaryColor.withOpacity(0.5),
                     padding: const EdgeInsets.symmetric(vertical: 18),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(20),
                     ),
-                    elevation: 5,
+                    elevation: _isLoading ? 0 : 5,
                     shadowColor: primaryColor.withOpacity(0.5),
                   ),
-                  child: const Text('Kayıt Ol', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white)),
+                  child: _isLoading 
+                    ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                    : const Text('Kayıt Ol', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white)),
                 ),
               ),
               
               const SizedBox(height: 40),
               
-              // Giriş Yönlendirme
               Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
@@ -203,6 +264,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
   }
 
   Widget _buildTextField({
+    required TextEditingController controller,
     required String hint,
     required IconData icon,
     required bool isDark,
@@ -215,6 +277,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
         borderRadius: BorderRadius.circular(16),
       ),
       child: TextField(
+        controller: controller,
         obscureText: isPassword && !_isPasswordVisible,
         keyboardType: keyboardType,
         style: TextStyle(color: isDark ? Colors.white : Colors.black, fontSize: 15),

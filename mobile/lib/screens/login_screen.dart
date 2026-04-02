@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+import '../main.dart'; // supabase instance
 import 'register_screen.dart';
 import '../home_page.dart';
 
@@ -10,7 +12,66 @@ class LoginScreen extends StatefulWidget {
 }
 
 class _LoginScreenState extends State<LoginScreen> {
+  final _emailController = TextEditingController();
+  final _passwordController = TextEditingController();
+  
   bool _isPasswordVisible = false;
+  bool _isLoading = false;
+
+  @override
+  void dispose() {
+    _emailController.dispose();
+    _passwordController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _handleLogin() async {
+    final email = _emailController.text.trim();
+    final password = _passwordController.text.trim();
+
+    if (email.isEmpty || password.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Lütfen E-posta ve Şifrenizi girin.')),
+      );
+      return;
+    }
+
+    setState(() => _isLoading = true);
+
+    try {
+      final response = await supabase.auth.signInWithPassword(
+        email: email,
+        password: password,
+      );
+
+      if (mounted) {
+        if (response.user != null) {
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(builder: (context) => const HomePage()),
+          );
+        }
+      }
+    } on AuthException catch (e) {
+      if (mounted) {
+        String message = 'Giriş yapılamadı.';
+        if (e.message.contains('Invalid login credentials')) {
+          message = 'E-posta veya şifre hatalı.';
+        } else {
+          message = e.message;
+        }
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Beklenmeyen bir hata oluştu.')));
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -25,7 +86,6 @@ class _LoginScreenState extends State<LoginScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               const SizedBox(height: 20),
-              // Logo ve Başlık
               Row(
                 children: [
                   Container(
@@ -69,9 +129,9 @@ class _LoginScreenState extends State<LoginScreen> {
               ),
               const SizedBox(height: 40),
 
-              // Form
               _buildInputLabel("E-POSTA ADRESİ", isDark),
               _buildTextField(
+                controller: _emailController,
                 hint: "isim@sirket.com",
                 icon: Icons.email_outlined,
                 keyboardType: TextInputType.emailAddress,
@@ -94,6 +154,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 ],
               ),
               _buildTextField(
+                controller: _passwordController,
                 hint: "••••••••",
                 icon: Icons.lock_outline,
                 isPassword: true,
@@ -101,33 +162,28 @@ class _LoginScreenState extends State<LoginScreen> {
               ),
               const SizedBox(height: 40),
 
-              // Giriş Butonu
               SizedBox(
                 width: double.infinity,
                 child: ElevatedButton(
-                  onPressed: () {
-                    // Ana Sayfaya Düz Geçiş (İleride Supabase Sign In tetiklenecek)
-                    Navigator.pushReplacement(
-                      context,
-                      MaterialPageRoute(builder: (context) => const HomePage()),
-                    );
-                  },
+                  onPressed: _isLoading ? null : _handleLogin,
                   style: ElevatedButton.styleFrom(
                     backgroundColor: primaryColor,
+                    disabledBackgroundColor: primaryColor.withOpacity(0.5),
                     padding: const EdgeInsets.symmetric(vertical: 18),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(20),
                     ),
-                    elevation: 5,
+                    elevation: _isLoading ? 0 : 5,
                     shadowColor: primaryColor.withOpacity(0.5),
                   ),
-                  child: const Text('Giriş Yap', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white)),
+                  child: _isLoading 
+                    ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                    : const Text('Giriş Yap', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white)),
                 ),
               ),
               
               const SizedBox(height: 40),
               
-              // Kayıt Yönlendirme
               Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
@@ -172,6 +228,7 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Widget _buildTextField({
+    required TextEditingController controller,
     required String hint,
     required IconData icon,
     required bool isDark,
@@ -184,6 +241,7 @@ class _LoginScreenState extends State<LoginScreen> {
         borderRadius: BorderRadius.circular(16),
       ),
       child: TextField(
+        controller: controller,
         obscureText: isPassword && !_isPasswordVisible,
         keyboardType: keyboardType,
         style: TextStyle(color: isDark ? Colors.white : Colors.black, fontSize: 15),
