@@ -15,7 +15,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
   final _nameController = TextEditingController();
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
-  
+
   bool _isPasswordVisible = false;
   bool _agreedToTerms = false;
   bool _isLoading = false;
@@ -42,7 +42,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
     if (name.isEmpty || email.isEmpty || password.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Tüm alanları doldurmanız gerekmektedir.')),
+        const SnackBar(
+          content: Text('Tüm alanları doldurmanız gerekmektedir.'),
+        ),
       );
       return;
     }
@@ -66,11 +68,15 @@ class _RegisterScreenState extends State<RegisterScreen> {
       }
     } on AuthException catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(e.message)));
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Beklenmeyen bir hata oluştu.')));
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Beklenmeyen bir hata oluştu.')),
+        );
       }
     } finally {
       if (mounted) {
@@ -100,7 +106,11 @@ class _RegisterScreenState extends State<RegisterScreen> {
                       color: primaryColor,
                       borderRadius: BorderRadius.circular(8),
                     ),
-                    child: const Icon(Icons.account_balance_wallet, color: Colors.white, size: 20),
+                    child: const Icon(
+                      Icons.account_balance_wallet,
+                      color: Colors.white,
+                      size: 20,
+                    ),
                   ),
                   const SizedBox(width: 10),
                   Text(
@@ -115,7 +125,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                 ],
               ),
               const SizedBox(height: 40),
-              
+
               Text(
                 'Hesap Oluştur',
                 style: TextStyle(
@@ -138,7 +148,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
               _buildInputLabel("AD SOYAD", isDark),
               _buildTextField(
                 controller: _nameController,
-                hint: "Ahmet Yılmaz",
+                hint: "Ad Soyad",
                 icon: Icons.person_outline,
                 isDark: isDark,
               ),
@@ -147,7 +157,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
               _buildInputLabel("E-POSTA ADRESİ", isDark),
               _buildTextField(
                 controller: _emailController,
-                hint: "a.yilmaz@sirket.com",
+                hint: "xxx@xxx.com",
                 icon: Icons.email_outlined,
                 keyboardType: TextInputType.emailAddress,
                 isDark: isDark,
@@ -173,10 +183,14 @@ class _RegisterScreenState extends State<RegisterScreen> {
                     child: Checkbox(
                       value: _agreedToTerms,
                       activeColor: primaryColor,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(4),
+                      ),
                       side: BorderSide(color: Colors.grey.shade400),
                       onChanged: (value) {
-                        setState(() { _agreedToTerms = value ?? false; });
+                        setState(() {
+                          _agreedToTerms = value ?? false;
+                        });
                       },
                     ),
                   ),
@@ -184,12 +198,32 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   Expanded(
                     child: RichText(
                       text: TextSpan(
-                        style: TextStyle(color: isDark ? Colors.grey.shade300 : Colors.grey.shade700, fontSize: 13, height: 1.5),
+                        style: TextStyle(
+                          color: isDark
+                              ? Colors.grey.shade300
+                              : Colors.grey.shade700,
+                          fontSize: 13,
+                          height: 1.5,
+                        ),
                         children: [
-                          TextSpan(text: 'Kullanım Şartları', style: TextStyle(color: primaryColor, fontWeight: FontWeight.bold)),
+                          TextSpan(
+                            text: 'Kullanım Şartları',
+                            style: TextStyle(
+                              color: primaryColor,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
                           const TextSpan(text: ' ve '),
-                          TextSpan(text: 'Gizlilik Politikası', style: TextStyle(color: primaryColor, fontWeight: FontWeight.bold)),
-                          const TextSpan(text: " metinlerini okudum ve onaylıyorum."),
+                          TextSpan(
+                            text: 'Gizlilik Politikası',
+                            style: TextStyle(
+                              color: primaryColor,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          const TextSpan(
+                            text: " metinlerini okudum ve onaylıyorum.",
+                          ),
                         ],
                       ),
                     ),
@@ -212,35 +246,60 @@ class _RegisterScreenState extends State<RegisterScreen> {
                     elevation: _isLoading ? 0 : 5,
                     shadowColor: primaryColor.withOpacity(0.5),
                   ),
-                  child: _isLoading 
-                    ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-                    : const Text('Kayıt Ol', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white)),
+                  child: _isLoading
+                      ? const SizedBox(
+                          height: 20,
+                          width: 20,
+                          child: CircularProgressIndicator(
+                            color: Colors.white,
+                            strokeWidth: 2,
+                          ),
+                        )
+                      : const Text(
+                          'Kayıt Ol',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.white,
+                          ),
+                        ),
                 ),
               ),
-              
+
               const SizedBox(height: 40),
-              
+
               Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   Text(
                     "Zaten hesabınız var mı? ",
-                    style: TextStyle(color: isDark ? Colors.grey.shade400 : Colors.grey.shade700, fontSize: 14),
+                    style: TextStyle(
+                      color: isDark
+                          ? Colors.grey.shade400
+                          : Colors.grey.shade700,
+                      fontSize: 14,
+                    ),
                   ),
                   GestureDetector(
                     onTap: () {
                       Navigator.pushReplacement(
                         context,
-                        MaterialPageRoute(builder: (context) => const LoginScreen()),
+                        MaterialPageRoute(
+                          builder: (context) => const LoginScreen(),
+                        ),
                       );
                     },
                     child: Text(
                       "Giriş Yap",
-                      style: TextStyle(color: primaryColor, fontWeight: FontWeight.bold, fontSize: 14),
+                      style: TextStyle(
+                        color: primaryColor,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 14,
+                      ),
                     ),
                   ),
                 ],
-              )
+              ),
             ],
           ),
         ),
@@ -280,7 +339,10 @@ class _RegisterScreenState extends State<RegisterScreen> {
         controller: controller,
         obscureText: isPassword && !_isPasswordVisible,
         keyboardType: keyboardType,
-        style: TextStyle(color: isDark ? Colors.white : Colors.black, fontSize: 15),
+        style: TextStyle(
+          color: isDark ? Colors.white : Colors.black,
+          fontSize: 15,
+        ),
         decoration: InputDecoration(
           hintText: hint,
           hintStyle: TextStyle(color: Colors.grey.shade500),
@@ -288,12 +350,16 @@ class _RegisterScreenState extends State<RegisterScreen> {
           suffixIcon: isPassword
               ? IconButton(
                   icon: Icon(
-                    _isPasswordVisible ? Icons.visibility : Icons.visibility_off,
+                    _isPasswordVisible
+                        ? Icons.visibility
+                        : Icons.visibility_off,
                     color: Colors.grey.shade500,
                     size: 20,
                   ),
                   onPressed: () {
-                    setState(() { _isPasswordVisible = !_isPasswordVisible; });
+                    setState(() {
+                      _isPasswordVisible = !_isPasswordVisible;
+                    });
                   },
                 )
               : null,
