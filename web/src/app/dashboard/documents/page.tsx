@@ -3,7 +3,8 @@
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
-import { Search, Download, Plus, MoreVertical, FileText, FileSpreadsheet, FileArchive, Zap, X, Loader2, CheckCircle2 } from "lucide-react";
+import { uploadDocument } from "@/lib/uploadDocument";
+import { Search, Download, Plus, MoreVertical, FileText, FileSpreadsheet, FileArchive, Zap, X, Loader2, CheckCircle2, Trash2 } from "lucide-react";
 
 type Document = {
   id: string;
@@ -27,6 +28,8 @@ export default function DocumentsPage() {
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
   const [uploadSuccess, setUploadSuccess] = useState(false);
+  const [deleteModalOpen, setDeleteModalOpen] = useState(false);
+  const [documentToDelete, setDocumentToDelete] = useState<Document | null>(null);
   const [filter, setFilter] = useState<"all" | "FATURA" | "MAKBUZ">("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
@@ -54,25 +57,16 @@ export default function DocumentsPage() {
     setUploading(true);
     setUploadSuccess(false);
 
-    const formData = new FormData();
-    formData.append("file", file);
-
-    try {
-      const res = await fetch("/api/upload", { method: "POST", body: formData });
-      const json = await res.json();
-
-      if (json.success) {
-        setUploadSuccess(true);
-        setTimeout(() => setUploadSuccess(false), 3000);
-        fetchDocuments(); // Listeyi yenile
-      } else {
-        alert("Yükleme hatası: " + json.error);
-      }
-    } catch (err: any) {
-      alert("Yükleme başarısız: " + err.message);
-    } finally {
-      setUploading(false);
+    const res = await uploadDocument(file);
+    if (res.success) {
+      setUploadSuccess(true);
+      setTimeout(() => setUploadSuccess(false), 3000);
+      fetchDocuments(); // Listeyi yenile
+    } else {
+      alert("Yükleme hatası: " + res.error);
     }
+    
+    setUploading(false);
   }
 
   function onFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
@@ -85,6 +79,28 @@ export default function DocumentsPage() {
     e.preventDefault();
     const file = e.dataTransfer.files[0];
     if (file) handleFileUpload(file);
+  }
+
+  async function deleteDocument() {
+    if (!documentToDelete) return;
+
+    try {
+      const { error } = await supabase
+        .from("documents")
+        .delete()
+        .eq("id", documentToDelete.id);
+
+      if (error) {
+        alert("Silme başarısız: " + error.message);
+      } else {
+        setDocuments(documents.filter(d => d.id !== documentToDelete.id));
+      }
+    } catch (err: any) {
+      alert("Hata oluştu: " + err.message);
+    } finally {
+      setDeleteModalOpen(false);
+      setDocumentToDelete(null);
+    }
   }
 
   // Filtreleme ve arama
@@ -275,18 +291,28 @@ export default function DocumentsPage() {
                             <span className={payment.color}>{payment.text}</span>
                           </span>
                         </td>
-                        <td className="px-6 py-4 text-right">
+                        <td className="px-6 py-4 text-right flex items-center justify-end gap-1">
                           {doc.cloudinary_secure_url && (
                             <a 
                               href={doc.cloudinary_secure_url} 
                               target="_blank" 
                               rel="noopener noreferrer"
-                              className="p-2 text-muted hover:text-foreground hover:bg-muted-bg rounded-lg transition-colors inline-flex"
+                              className="p-2 text-muted hover:text-blue-600 hover:bg-blue-500/10 rounded-lg transition-colors inline-flex"
                               onClick={(e) => e.stopPropagation()}
                             >
                               <Download size={18} />
                             </a>
                           )}
+                          <button
+                            className="p-2 text-muted hover:text-red-600 hover:bg-red-500/10 rounded-lg transition-colors inline-flex"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setDocumentToDelete(doc);
+                              setDeleteModalOpen(true);
+                            }}
+                          >
+                            <Trash2 size={18} />
+                          </button>
                         </td>
                       </tr>
                     );
@@ -362,6 +388,35 @@ export default function DocumentsPage() {
           </button>
         </div>
       </div>
+
+      {/* Delete Confirmation Modal */}
+      {deleteModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
+          <div className="bg-card border border-border p-6 rounded-2xl shadow-2xl max-w-sm w-full mx-4 animate-in fade-in zoom-in duration-200">
+            <div className="w-12 h-12 rounded-full bg-red-500/10 text-red-500 flex items-center justify-center mb-4 mx-auto">
+               <Trash2 size={24} />
+            </div>
+            <h3 className="text-xl font-bold text-center text-foreground mb-2">Belgeyi Sil</h3>
+            <p className="text-center text-muted mb-6 font-medium text-sm">
+              <span className="font-bold text-foreground">{documentToDelete?.original_filename || documentToDelete?.name}</span> adlı belgeyi silmek istediğinize emin misiniz? Bu işlem geri alınamaz.
+            </p>
+            <div className="flex gap-3">
+              <button 
+                onClick={() => { setDeleteModalOpen(false); setDocumentToDelete(null); }}
+                className="flex-1 py-2.5 rounded-xl font-bold bg-muted-bg hover:bg-border text-foreground transition-colors"
+              >
+                İptal
+              </button>
+              <button 
+                onClick={deleteDocument}
+                className="flex-1 py-2.5 rounded-xl font-bold bg-red-600 hover:bg-red-700 text-white transition-colors shadow-lg shadow-red-600/20"
+              >
+                Sil
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -101,6 +101,21 @@ export default function AnalyticsPage() {
     return { arcLength, offset, stroke: strokeColors[i % strokeColors.length] };
   });
 
+  // Geçerli ayın ilk ve son gününü bul
+  const today = new Date();
+  const firstDay = new Date(today.getFullYear(), today.getMonth(), 1).toLocaleDateString("tr-TR", { day: '2-digit', month: 'short' });
+  const lastDay = new Date(today.getFullYear(), today.getMonth() + 1, 0).toLocaleDateString("tr-TR", { day: '2-digit', month: 'short' });
+  const currentMonthRange = `${firstDay} - ${lastDay}`;
+
+  // Zaman içindeki harcama grafiği için dinamik ay isimleri (Son 7 ay)
+  const allMonths = ["OCAK", "ŞUBAT", "MART", "NİSAN", "MAYIS", "HAZİRAN", "TEMMUZ", "AĞUSTOS", "EYLÜL", "EKİM", "KASIM", "ARALIK"];
+  const currentMonthIdx = today.getMonth();
+  const graphMonths = Array.from({ length: 7 }).map((_, i) => {
+    let m = currentMonthIdx - (6 - i);
+    if (m < 0) m += 12;
+    return allMonths[m];
+  });
+
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
       {/* Header */}
@@ -117,7 +132,7 @@ export default function AnalyticsPage() {
           </div>
           <div className="flex items-center gap-2 px-4 py-2.5 bg-card border border-border text-foreground font-medium rounded-xl shadow-sm text-sm">
             <Calendar size={16} className="text-muted" />
-            01 Oca - 31 Oca
+            {currentMonthRange}
           </div>
         </div>
       </div>
@@ -193,7 +208,7 @@ export default function AnalyticsPage() {
                </svg>
             </div>
             <div className="relative z-10 w-full flex justify-between text-[10px] font-bold text-muted uppercase tracking-widest bottom-0 border-t border-border pt-3">
-              <span>OCAK</span><span>ŞUBAT</span><span>MART</span><span>NİSAN</span><span>MAYIS</span><span>HAZİRAN</span><span>TEMMUZ</span>
+              {graphMonths.map(m => <span key={m}>{m}</span>)}
             </div>
           </div>
         </div>

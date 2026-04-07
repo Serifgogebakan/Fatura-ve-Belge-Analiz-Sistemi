@@ -55,7 +55,7 @@ export default function SettingsPage() {
 
     if (prof) {
       setProfile({
-        full_name: prof.full_name || "",
+        full_name: prof.full_name || authUser.user_metadata?.full_name || "",
         role: prof.role || "user",
         company_name: prof.company_name || "",
         tax_id: prof.tax_id || "",
@@ -65,6 +65,11 @@ export default function SettingsPage() {
         subscription_renewal: prof.subscription_renewal || "",
         document_limit: prof.document_limit || 100,
       });
+    } else {
+      setProfile(p => ({
+        ...p,
+        full_name: authUser.user_metadata?.full_name || "",
+      }));
     }
 
     // Belge sayısı
@@ -83,15 +88,15 @@ export default function SettingsPage() {
 
     const { error } = await supabase
       .from("profiles")
-      .update({
+      .upsert({
+        id: user.id,
         full_name: profile.full_name,
         company_name: profile.company_name,
         tax_id: profile.tax_id,
         trade_reg_no: profile.trade_reg_no,
         address: profile.address,
         updated_at: new Date().toISOString(),
-      })
-      .eq("id", user.id);
+      });
 
     setSaving(false);
     if (!error) {

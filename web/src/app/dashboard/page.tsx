@@ -3,12 +3,19 @@
 import React, { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "../../lib/supabase";
-import { BarChart3, Upload, FileText, TrendingUp, MoreVertical } from "lucide-react";
+import { uploadDocument } from "@/lib/uploadDocument";
+import { BarChart3, Upload, FileText, TrendingUp, MoreVertical, Loader2, CheckCircle2, Trash2 } from "lucide-react";
 
 export default function DashboardPage() {
   const router = useRouter();
   const [user, setUser] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+
+  const [uploading, setUploading] = useState(false);
+  const [uploadSuccess, setUploadSuccess] = useState(false);
+  const [deleteModalOpen, setDeleteModalOpen] = useState(false);
+  const [documentToDelete, setDocumentToDelete] = useState<any>(null);
+  const fileInputRef = React.useRef<HTMLInputElement>(null);
 
   // Supabase'den çekilen veriler
   const [stats, setStats] = useState({
@@ -84,6 +91,56 @@ export default function DashboardPage() {
     }
   }
 
+  async function handleUpload(file: File) {
+    setUploading(true);
+    setUploadSuccess(false);
+
+    const res = await uploadDocument(file);
+    if (res.success) {
+      setUploadSuccess(true);
+      setTimeout(() => setUploadSuccess(false), 3000);
+      if (user) fetchDashboardData(user.id); // Yenile
+    } else {
+      alert("Yükleme hatası: " + res.error);
+    }
+    
+    setUploading(false);
+  }
+
+  function onFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (file) handleUpload(file);
+    e.target.value = "";
+  }
+
+  function handleDrop(e: React.DragEvent) {
+    e.preventDefault();
+    const file = e.dataTransfer.files[0];
+    if (file) handleUpload(file);
+  }
+
+  async function deleteDocument() {
+    if (!documentToDelete || !user) return;
+
+    try {
+      const { error } = await supabase
+        .from("documents")
+        .delete()
+        .eq("id", documentToDelete.id);
+
+      if (error) {
+        alert("Silme başarısız: " + error.message);
+      } else {
+        fetchDashboardData(user.id);
+      }
+    } catch (err: any) {
+      alert("Hata oluştu: " + err.message);
+    } finally {
+      setDeleteModalOpen(false);
+      setDocumentToDelete(null);
+    }
+  }
+
   if (loading) {
     return (
       <div className="min-h-64 flex items-center justify-center">
@@ -94,7 +151,16 @@ export default function DashboardPage() {
 
   // Aylık mock veri (gerçek aylık dağılım yerine geçici)
   const monthlyData = [15, 32, 88, 45, 60, stats.totalDocuments || 38];
-  const months = ["OCA", "ŞUB", "MAR", "NİS", "MAY", "HAZ"];
+  
+  // Dinamik ay isimleri (Son 6 ay)
+  const allMonths = ["OCA", "ŞUB", "MAR", "NİS", "MAY", "HAZ", "TEM", "AĞU", "EYL", "EKİ", "KAS", "ARA"];
+  const currentMonthIdx = new Date().getMonth();
+  const months = Array.from({ length: 6 }).map((_, i) => {
+    let m = currentMonthIdx - (5 - i);
+    if (m < 0) m += 12;
+    return allMonths[m];
+  });
+
   const maxBar = Math.max(...monthlyData);
 
   function formatCurrency(val: number) {
@@ -122,6 +188,17 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-8 animate-in fade-in duration-500">
+      {/* Toast */}
+      {uploadSuccess && (
+        <div className="fixed top-6 right-6 z-50 flex items-center gap-3 bg-emerald-600 text-white px-5 py-3 rounded-xl shadow-xl animate-in slide-in-from-top duration-300">
+          <CheckCircle2 size={20} />
+          <span className="font-semibold text-sm">Belge başarıyla yüklendi!</span>
+        </div>
+      )}
+
+      {/* Hidden File Input */}
+      <input ref={fileInputRef} type="file" accept=".pdf,.png,.jpg,.jpeg" className="hidden" onChange={onFileSelect} />
+
       {/* Page Header */}
       <div className="flex items-start justify-between">
         <div>
@@ -205,14 +282,23 @@ export default function DashboardPage() {
         {/* Document Upload */}
         <div className="lg:col-span-2 bg-card rounded-3xl p-6 border border-border flex flex-col">
           <h3 className="font-semibold text-foreground mb-4">Hızlı Yükleme</h3>
-          <div className="flex-1 flex flex-col items-center justify-center border-2 border-dashed border-border rounded-2xl p-8 text-center hover:border-accent hover:bg-accent/5 transition-all cursor-pointer group">
+          <div 
+            className="flex-1 flex flex-col items-center justify-center border-2 border-dashed border-border rounded-2xl p-8 text-center hover:border-accent hover:bg-accent/5 transition-all cursor-pointer group"
+            onClick={() => fileInputRef.current?.click()}
+            onDrop={handleDrop}
+            onDragOver={(e) => e.preventDefault()}
+          >
             <div className="w-14 h-14 bg-muted-bg group-hover:bg-accent group-hover:text-accent-fg rounded-2xl flex items-center justify-center mb-4 transition-colors">
-              <Upload className="w-7 h-7 text-muted group-hover:text-accent-fg transition-colors" />
+              {uploading ? (
+                <Loader2 size={28} className="text-muted group-hover:text-accent-fg animate-spin" />
+              ) : (
+                <Upload className="w-7 h-7 text-muted group-hover:text-accent-fg transition-colors" />
+              )}
             </div>
             <p className="font-semibold text-foreground mb-1">Belgeleri Sürükle & Bırak</p>
             <p className="text-xs text-muted">PDF, JPEG veya PNG, 20MB'a kadar</p>
-            <button className="mt-4 px-4 py-2 text-sm bg-muted-bg hover:bg-border text-foreground rounded-xl font-medium transition-colors">
-              Dosya Seç
+            <button disabled={uploading} className="mt-4 px-4 py-2 text-sm bg-muted-bg hover:bg-border text-foreground rounded-xl font-medium transition-colors disabled:opacity-50">
+              {uploading ? "Yükleniyor..." : "Dosya Seç"}
             </button>
           </div>
         </div>
@@ -267,8 +353,15 @@ export default function DashboardPage() {
                     }`}>
                       {doc.status}
                     </span>
-                    <button className="opacity-0 group-hover:opacity-100 p-2 rounded-lg hover:bg-border transition-all">
-                      <MoreVertical className="w-4 h-4 text-muted" />
+                    <button 
+                      className="opacity-0 group-hover:opacity-100 p-2 rounded-lg hover:bg-red-500/10 hover:text-red-600 transition-all text-muted"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setDocumentToDelete(doc);
+                        setDeleteModalOpen(true);
+                      }}
+                    >
+                      <Trash2 className="w-4 h-4" />
                     </button>
                   </div>
                 );
@@ -277,6 +370,35 @@ export default function DashboardPage() {
           </div>
         </div>
       </div>
+
+      {/* Delete Confirmation Modal */}
+      {deleteModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
+          <div className="bg-card border border-border p-6 rounded-2xl shadow-2xl max-w-sm w-full mx-4 animate-in fade-in zoom-in duration-200">
+            <div className="w-12 h-12 rounded-full bg-red-500/10 text-red-500 flex items-center justify-center mb-4 mx-auto">
+               <Trash2 size={24} />
+            </div>
+            <h3 className="text-xl font-bold text-center text-foreground mb-2">Belgeyi Sil</h3>
+            <p className="text-center text-muted mb-6 font-medium text-sm">
+              <span className="font-bold text-foreground">{documentToDelete?.original_filename || documentToDelete?.name}</span> adlı belgeyi silmek istediğinize emin misiniz? Bu işlem geri alınamaz.
+            </p>
+            <div className="flex gap-3">
+              <button 
+                onClick={() => { setDeleteModalOpen(false); setDocumentToDelete(null); }}
+                className="flex-1 py-2.5 rounded-xl font-bold bg-muted-bg hover:bg-border text-foreground transition-colors"
+              >
+                İptal
+              </button>
+              <button 
+                onClick={deleteDocument}
+                className="flex-1 py-2.5 rounded-xl font-bold bg-red-600 hover:bg-red-700 text-white transition-colors shadow-lg shadow-red-600/20"
+              >
+                Sil
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

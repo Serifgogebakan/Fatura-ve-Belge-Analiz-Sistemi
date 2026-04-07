@@ -2,7 +2,8 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { supabase } from "@/lib/supabase";
 import { 
   Building2, 
   LayoutDashboard, 
@@ -13,12 +14,33 @@ import {
   LogOut,
   Settings
 } from "lucide-react";
-import { supabase } from "@/lib/supabase";
 
 export default function Sidebar() {
   const pathname = usePathname();
   const router = useRouter();
   const [showLogoutModal, setShowLogoutModal] = useState(false);
+  const [userProfile, setUserProfile] = useState<{name: string, role: string, initials: string}>({name: "Kullanıcı", role: "Üye", initials: "K"});
+
+  useEffect(() => {
+    async function loadUser() {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        let name = user.user_metadata?.full_name || "Yeni Kullanıcı";
+        let role = "Üye";
+
+        const { data: prof } = await supabase.from("profiles").select("full_name, role").eq("id", user.id).single();
+        if (prof?.full_name) name = prof.full_name;
+        if (prof?.role) role = prof.role === "user" ? "Kullanıcı" : prof.role;
+        
+        setUserProfile({
+          name,
+          role,
+          initials: name.substring(0, 1).toUpperCase()
+        });
+      }
+    }
+    loadUser();
+  }, []);
 
   const navItems = [
     { href: "/dashboard", label: "Genel Bakış", icon: LayoutDashboard },
@@ -84,11 +106,11 @@ export default function Sidebar() {
           {/* User Profile Mini */}
           <div className="flex items-center gap-3 p-3 mb-4 rounded-xl border border-border bg-muted-bg/50">
             <div className="w-9 h-9 rounded-full bg-accent/20 flex items-center justify-center text-accent shrink-0">
-              <span className="font-bold text-sm">C</span>
+              <span className="font-bold text-sm">{userProfile.initials}</span>
             </div>
             <div className="overflow-hidden">
-              <p className="font-bold text-sm text-foreground truncate">Caner Demir</p>
-              <p className="text-xs text-muted truncate">CFO</p>
+              <p className="font-bold text-sm text-foreground truncate">{userProfile.name}</p>
+              <p className="text-xs text-muted truncate">{userProfile.role}</p>
             </div>
           </div>
 
