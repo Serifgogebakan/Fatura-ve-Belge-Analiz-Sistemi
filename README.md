@@ -21,9 +21,10 @@ Küçük işletmeler, faturalarını, fişlerini ve çeşitli finansal belgeleri
 | **2. Hafta** | **Backend Temelleri** |  Next.js ile projenin web arayüzünün kodlanması, Supabase bağlantısının yapılması ve Kullanıcı Kayıt/Giriş (Auth)    sisteminin tasarlanması. |                     
 | **3. Hafta** | **Mobil Temelleri** | Flutter projesinin oluşturulması, temel ekranların (giriş, anasayfa) tasarlanması ve Auth entegrasyonu. |
 | **4. Hafta** | **Belge Yükleme** | Mobil tarafta (Flutter) kamera ve galeri erişimi ile belge seçme; resimleri sunucuya/Supabase Storage'a yükleme sistemi. |
-| **5. Hafta** | **OCR Entegrasyonu** | Yüklenen belge görsellerinden metin (text) çıkaran OCR sisteminin (Tesseract / Cloud Vision vb.) backend'e entegre edilmesi. |
+| **5. Hafta** | **Web Paneli** | .NET backend API kurumu, yüklenmiş olan belgeleri liste halinde ulgörüntüleme ve yönetme (CRUD) ekranları. |
 | **6. Hafta** | **Veri Analizi** | OCR'dan elde edilen metin yığınlarından düzenli fatura bilgilerini (Tutar, Tarih, VKN vb.) ayrıştırma (parse) ve veritabanına kaydetme. |
-| **7. Hafta** | **Web Paneli** | .NET backend API kurulumu, yüklenmiş olan belgeleri liste halinde görüntüleme ve yönetme (CRUD) ekranları. |
+| **7. Hafta** | **OCR Entegrasyonu** | Yüklenen belge görsellerinden metin (text) çıkaran OCR sisteminin (Tesseract / Cloud Vision vb.) backend'e entegre edilmesi. |
+
 | **8. Hafta** | **Finansal Grafikler** | Taranan fatura verilerine dayanarak harcama analiz grafikleri (pasta, çizgi grafikler) ve finansal raporlama ekranlarının yapılması. |
 | **9. Hafta** | **Arama ve Filtreleme** | Hem mobilde hem web'de yüzlerce belge/fatura içinde metin bazlı, tarih veya tutara göre arama/filtreleme sisteminin geliştirilmesi. |
 | **10. Hafta** | **Test & Sunum** | Tüm sistemin (Uçtan Uca) test edilmesi, tespit edilen hataların giderilmesi (Bugfix) ve final proje sunumu. |
