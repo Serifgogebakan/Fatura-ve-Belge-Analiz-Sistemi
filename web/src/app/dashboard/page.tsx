@@ -5,19 +5,19 @@ import { useRouter } from "next/navigation";
 import { supabase } from "../../lib/supabase";
 import { BarChart3, Upload, FileText, TrendingUp, MoreVertical } from "lucide-react";
 
-const mockDocuments = [
-  { name: "Q1_Audit_Report.pdf", size: "2.4 MB", time: "2 SAAT ÖNCE", tag: "Denetim", tagColor: "blue" },
-  { name: "Server_Maintenance_Inv_04.jpg", size: "840 KB", time: "DÜN", tag: "Faturalar", tagColor: "orange" },
-  { name: "Payroll_Summary_March.xlsx", size: "1.2 MB", time: "2 GÜN ÖNCE", tag: "Bordro", tagColor: "gray" },
-];
-
-const monthlyData = [15, 32, 88, 45, 60, 38]; 
-const months = ["OCA", "ŞUB", "MAR", "NİS", "MAY", "HAZ"];
-
 export default function DashboardPage() {
   const router = useRouter();
   const [user, setUser] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+
+  // Supabase'den çekilen veriler
+  const [stats, setStats] = useState({
+    totalDocuments: 0,
+    totalAmount: 0,
+    pendingCount: 0,
+    completedCount: 0,
+  });
+  const [recentDocs, setRecentDocs] = useState<any[]>([]);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -25,10 +25,64 @@ export default function DashboardPage() {
         router.push("/login");
       } else {
         setUser(session.user);
-        setLoading(false);
+        fetchDashboardData(session.user.id);
       }
     });
   }, [router]);
+
+  async function fetchDashboardData(userId: string) {
+    try {
+      // Toplam belge sayısı
+      const { count: totalDocuments } = await supabase
+        .from("documents")
+        .select("*", { count: "exact", head: true })
+        .eq("user_id", userId);
+
+      // Toplam tutar
+      const { data: amountData } = await supabase
+        .from("documents")
+        .select("amount")
+        .eq("user_id", userId)
+        .not("amount", "is", null);
+
+      const totalAmount = amountData?.reduce((sum, d) => sum + (Number(d.amount) || 0), 0) ?? 0;
+
+      // Bekleyen belgeler
+      const { count: pendingCount } = await supabase
+        .from("documents")
+        .select("*", { count: "exact", head: true })
+        .eq("user_id", userId)
+        .eq("payment_status", "beklemede");
+
+      // Tamamlanan belgeler
+      const { count: completedCount } = await supabase
+        .from("documents")
+        .select("*", { count: "exact", head: true })
+        .eq("user_id", userId)
+        .eq("status", "tamamlandı");
+
+      setStats({
+        totalDocuments: totalDocuments ?? 0,
+        totalAmount,
+        pendingCount: pendingCount ?? 0,
+        completedCount: completedCount ?? 0,
+      });
+
+      // Son 5 belge
+      const { data: docs } = await supabase
+        .from("documents")
+        .select("*")
+        .eq("user_id", userId)
+        .order("created_at", { ascending: false })
+        .limit(5);
+
+      setRecentDocs(docs ?? []);
+    } catch (err) {
+      console.error("Dashboard veri çekme hatası:", err);
+    } finally {
+      setLoading(false);
+    }
+  }
 
   if (loading) {
     return (
@@ -38,10 +92,36 @@ export default function DashboardPage() {
     );
   }
 
+  // Aylık mock veri (gerçek aylık dağılım yerine geçici)
+  const monthlyData = [15, 32, 88, 45, 60, stats.totalDocuments || 38];
+  const months = ["OCA", "ŞUB", "MAR", "NİS", "MAY", "HAZ"];
   const maxBar = Math.max(...monthlyData);
 
+  function formatCurrency(val: number) {
+    return new Intl.NumberFormat("tr-TR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(val);
+  }
+
+  function timeAgo(dateStr: string) {
+    const diff = Date.now() - new Date(dateStr).getTime();
+    const mins = Math.floor(diff / 60000);
+    if (mins < 60) return `${mins} dk önce`;
+    const hours = Math.floor(mins / 60);
+    if (hours < 24) return `${hours} saat önce`;
+    const days = Math.floor(hours / 24);
+    return `${days} gün önce`;
+  }
+
+  function fileTypeTag(type: string | null) {
+    switch (type) {
+      case "pdf": return { label: "PDF", color: "blue" };
+      case "image": return { label: "Görsel", color: "orange" };
+      case "excel": return { label: "Excel", color: "green" };
+      default: return { label: "Belge", color: "gray" };
+    }
+  }
+
   return (
-    <div className="space-y-8">
+    <div className="space-y-8 animate-in fade-in duration-500">
       {/* Page Header */}
       <div className="flex items-start justify-between">
         <div>
@@ -61,9 +141,6 @@ export default function DashboardPage() {
               {p}
             </button>
           ))}
-          <button className="ml-2 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-muted border border-border hover:border-muted transition-colors">
-            Kategoriler
-          </button>
         </div>
       </div>
 
@@ -79,21 +156,19 @@ export default function DashboardPage() {
                 <BarChart3 className="w-5 h-5 text-white" />
               </div>
               <span className="flex items-center gap-1 text-xs bg-green-500/20 text-green-400 px-2.5 py-1 rounded-full font-semibold border border-green-500/20">
-                <TrendingUp className="w-3 h-3" /> +12.4% vs Geçen Yıl
+                <TrendingUp className="w-3 h-3" /> {stats.totalDocuments} Belge
               </span>
             </div>
             <p className="text-slate-300 text-sm font-medium mb-1">Toplam Giderler</p>
             <p className="text-4xl font-extrabold tracking-tight mb-4 text-white">
-              ₺42.890<span className="text-2xl font-bold text-slate-400">,50</span>
+              ₺{formatCurrency(stats.totalAmount)}
             </p>
             <div className="flex items-center justify-between">
-              <div className="flex -space-x-2">
-                {["B", "A", "C"].map((l, i) => (
-                  <div key={i} className={`w-8 h-8 rounded-full border-2 border-slate-800 flex items-center justify-center text-xs font-bold ${i === 0 ? 'bg-indigo-500 text-white' : i === 1 ? 'bg-emerald-500 text-white' : 'bg-orange-500 text-white'}`}>{l}</div>
-                ))}
-                <div className="w-8 h-8 rounded-full bg-slate-700 border-2 border-slate-800 flex items-center justify-center text-xs font-bold text-white">+5</div>
+              <div className="flex gap-4 text-xs text-slate-400 font-medium">
+                <span>Bekleyen: <span className="text-amber-400 font-bold">{stats.pendingCount}</span></span>
+                <span>Tamamlanan: <span className="text-emerald-400 font-bold">{stats.completedCount}</span></span>
               </div>
-              <span className="text-slate-400 text-xs font-medium">2 dk önce güncel</span>
+              <span className="text-slate-400 text-xs font-medium">Anlık veri</span>
             </div>
           </div>
         </div>
@@ -142,36 +217,63 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* Recent Activity */}
+        {/* Recent Activity - Supabase'den gerçek veri */}
         <div className="lg:col-span-3 bg-card rounded-3xl p-6 border border-border">
           <div className="flex justify-between items-center mb-5">
             <h3 className="font-semibold text-foreground">Son Belgeler</h3>
-            <button className="text-sm text-accent hover:opacity-80 transition-opacity font-medium">
+            <button
+              onClick={() => router.push("/dashboard/documents")}
+              className="text-sm text-accent hover:opacity-80 transition-opacity font-medium"
+            >
               Tümünü Gör
             </button>
           </div>
           <div className="space-y-3">
-            {mockDocuments.map((doc, i) => (
-              <div key={i} className="flex items-center gap-4 p-3 rounded-2xl hover:bg-muted-bg transition-colors group">
-                <div className="w-12 h-12 bg-muted-bg rounded-xl flex items-center justify-center shrink-0">
-                  <FileText className="w-5 h-5 text-muted" />
+            {recentDocs.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-12 text-center">
+                <div className="w-16 h-16 bg-muted-bg rounded-2xl flex items-center justify-center mb-4">
+                  <FileText className="w-8 h-8 text-muted" />
                 </div>
-                <div className="flex-1 min-w-0">
-                  <p className="font-medium text-sm truncate text-foreground">{doc.name}</p>
-                  <p className="text-xs text-muted font-medium mt-0.5">{doc.size} • {doc.time}</p>
-                </div>
-                <span className={`text-xs font-semibold px-3 py-1 rounded-full shrink-0 ${
-                  doc.tagColor === 'blue' ? 'bg-blue-500/10 text-blue-600 dark:text-blue-400' :
-                  doc.tagColor === 'orange' ? 'bg-orange-500/10 text-orange-600 dark:text-orange-400' :
-                  'bg-slate-500/10 text-slate-600 dark:text-slate-400'
-                }`}>
-                  {doc.tag}
-                </span>
-                <button className="opacity-0 group-hover:opacity-100 p-2 rounded-lg hover:bg-border transition-all">
-                  <MoreVertical className="w-4 h-4 text-muted" />
-                </button>
+                <p className="font-semibold text-foreground mb-1">Henüz belge yok</p>
+                <p className="text-xs text-muted">Yukarıdaki alandan ilk belgenizi yükleyin.</p>
               </div>
-            ))}
+            ) : (
+              recentDocs.map((doc, i) => {
+                const tag = fileTypeTag(doc.file_type);
+                return (
+                  <div key={i} className="flex items-center gap-4 p-3 rounded-2xl hover:bg-muted-bg transition-colors group">
+                    <div className="w-12 h-12 bg-muted-bg rounded-xl flex items-center justify-center shrink-0">
+                      <FileText className="w-5 h-5 text-muted" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="font-medium text-sm truncate text-foreground">{doc.original_filename || doc.name}</p>
+                      <p className="text-xs text-muted font-medium mt-0.5">
+                        {doc.amount ? `₺${formatCurrency(doc.amount)}` : "Tutar yok"} • {timeAgo(doc.created_at)}
+                      </p>
+                    </div>
+                    <span className={`text-xs font-semibold px-3 py-1 rounded-full shrink-0 ${
+                      tag.color === 'blue' ? 'bg-blue-500/10 text-blue-600 dark:text-blue-400' :
+                      tag.color === 'orange' ? 'bg-orange-500/10 text-orange-600 dark:text-orange-400' :
+                      tag.color === 'green' ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' :
+                      'bg-slate-500/10 text-slate-600 dark:text-slate-400'
+                    }`}>
+                      {tag.label}
+                    </span>
+                    <span className={`text-xs font-semibold px-2.5 py-1 rounded-full shrink-0 ${
+                      doc.status === 'tamamlandı' ? 'bg-emerald-500/10 text-emerald-600' :
+                      doc.status === 'beklemede' ? 'bg-amber-500/10 text-amber-600' :
+                      doc.status === 'işleniyor' ? 'bg-blue-500/10 text-blue-600' :
+                      'bg-red-500/10 text-red-600'
+                    }`}>
+                      {doc.status}
+                    </span>
+                    <button className="opacity-0 group-hover:opacity-100 p-2 rounded-lg hover:bg-border transition-all">
+                      <MoreVertical className="w-4 h-4 text-muted" />
+                    </button>
+                  </div>
+                );
+              })
+            )}
           </div>
         </div>
       </div>
