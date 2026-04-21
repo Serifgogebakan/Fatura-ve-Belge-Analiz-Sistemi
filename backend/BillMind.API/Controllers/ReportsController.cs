@@ -1,3 +1,4 @@
+using BillMind.API.Services;
 using Microsoft.AspNetCore.Mvc;
 
 namespace BillMind.API.Controllers;
@@ -6,60 +7,84 @@ namespace BillMind.API.Controllers;
 [Route("api/[controller]")]
 public class ReportsController : ControllerBase
 {
+    private readonly SupabaseService _supabase;
     private readonly ILogger<ReportsController> _logger;
 
-    public ReportsController(ILogger<ReportsController> logger)
+    public ReportsController(SupabaseService supabase, ILogger<ReportsController> logger)
     {
+        _supabase = supabase;
         _logger = logger;
     }
 
     /// <summary>
     /// Dashboard için aylık harcama özeti.
-    /// GET /api/reports/monthly-summary
+    /// GET /api/reports/monthly-summary?userId={userId}&year={year}
     /// </summary>
     [HttpGet("monthly-summary")]
-    public ActionResult<object> GetMonthlySummary([FromQuery] int year = 0)
+    public async Task<ActionResult<object>> GetMonthlySummary([FromQuery] string? userId, [FromQuery] int year = 0)
     {
+        if (string.IsNullOrEmpty(userId))
+            return BadRequest(new { message = "userId parametresi gerekli." });
+
         if (year == 0) year = DateTime.UtcNow.Year;
 
-        // TODO: Gerçek veri Supabase'den çekilecek
-        var mockData = new
-        {
-            Year = year,
-            TotalExpenses = 42890.50m,
-            Currency = "TRY",
-            ChangePercent = 12.4,
-            MonthlyBreakdown = new[]
-            {
-                new { Month = "Ocak",   Amount = 5200m },
-                new { Month = "Şubat",  Amount = 8100m },
-                new { Month = "Mart",   Amount = 15600m },
-                new { Month = "Nisan",  Amount = 4300m },
-                new { Month = "Mayıs",  Amount = 6200m },
-                new { Month = "Haziran",Amount = 3490.50m },
-            }
-        };
+        var summary = await _supabase.GetMonthlySummaryAsync(userId, year);
 
-        return Ok(mockData);
+        if (summary == null)
+        {
+            return StatusCode(500, new { message = "Rapor oluşturulurken bir hata oluştu." });
+        }
+
+        return Ok(summary);
     }
 
     /// <summary>
-    /// Kategori bazında harcama dağılımı.
-    /// GET /api/reports/category-breakdown
+    /// Kategori bazında harcama dağılımı — Supabase'den hesaplanır.
+    /// GET /api/reports/category-breakdown?userId={userId}
     /// </summary>
     [HttpGet("category-breakdown")]
-    public ActionResult<object> GetCategoryBreakdown()
+    public async Task<ActionResult<object>> GetCategoryBreakdown([FromQuery] string? userId)
     {
-        // TODO: Gerçek veri Supabase'den çekilecek
-        var mockData = new[]
-        {
-            new { Category = "Fatura",    Amount = 18500m, Percentage = 43.1 },
-            new { Category = "Fiş",       Amount = 9200m,  Percentage = 21.4 },
-            new { Category = "Sipariş",   Amount = 8900m,  Percentage = 20.7 },
-            new { Category = "İrsaliye",  Amount = 4100m,  Percentage = 9.6  },
-            new { Category = "Diğer",     Amount = 2190m,  Percentage = 5.1  },
-        };
+        if (string.IsNullOrEmpty(userId))
+            return BadRequest(new { message = "userId parametresi gerekli." });
 
-        return Ok(mockData);
+        var documents = await _supabase.GetDocumentsByUserAsync(userId);
+
+        if (documents == null)
+        {
+            return StatusCode(500, new { message = "Veriler yüklenirken bir hata oluştu." });
+        }
+
+        var breakdown = documents
+            .GroupBy(d => d.ContainsKey("category") ? d["category"]?.ToString() ?? "Diğer" : "Diğer")
+            .Select(g =>
+            {
+                var amount = g.Sum(d =>
+                {
+                    if (d.ContainsKey("totalAmount") && decimal.TryParse(d["totalAmount"]?.ToString(), out var a))
+                        return a;
+                    return 0m;
+                });
+
+                return new
+                {
+                    Category = g.Key,
+                    Amount = amount,
+                    Count = g.Count()
+                };
+            })
+            .OrderByDescending(x => x.Amount)
+            .ToList();
+
+        var total = breakdown.Sum(b => b.Amount);
+        var result = breakdown.Select(b => new
+        {
+            b.Category,
+            b.Amount,
+            b.Count,
+            Percentage = total > 0 ? Math.Round((double)(b.Amount / total) * 100, 1) : 0
+        });
+
+        return Ok(result);
     }
 }

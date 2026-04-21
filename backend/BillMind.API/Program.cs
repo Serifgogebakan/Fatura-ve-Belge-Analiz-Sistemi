@@ -28,6 +28,7 @@ builder.Services.AddCors(options =>
 // Bağımlılık Enjeksiyonu (DI)
 builder.Services.AddSingleton<OcrService>();
 builder.Services.AddSingleton<InvoiceParserService>();
+builder.Services.AddSingleton<SupabaseService>();
 
 // Büyük dosya yüklemeleri için
 builder.Services.Configure<Microsoft.AspNetCore.Http.Features.FormOptions>(o =>
@@ -36,6 +37,10 @@ builder.Services.Configure<Microsoft.AspNetCore.Http.Features.FormOptions>(o =>
 });
 
 var app = builder.Build();
+
+// Supabase bağlantısını başlat
+var supabaseService = app.Services.GetRequiredService<SupabaseService>();
+await supabaseService.InitializeAsync();
 
 // Swagger — sadece geliştirme ortamında
 if (app.Environment.IsDevelopment())
@@ -53,6 +58,6 @@ app.UseAuthorization();
 app.MapControllers();
 
 // Sağlık kontrolü endpoint
-app.MapGet("/health", () => Results.Ok(new { Status = "Sağlıklı", Timestamp = DateTime.UtcNow, Version = "1.0.0" }));
+app.MapGet("/health", () => Results.Ok(new { Status = "Sağlıklı", Timestamp = DateTime.UtcNow, Version = "1.0.0", Database = "Supabase Bağlı" }));
 
 app.Run();

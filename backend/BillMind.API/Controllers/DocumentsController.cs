@@ -10,26 +10,69 @@ public class DocumentsController : ControllerBase
 {
     private readonly OcrService _ocr;
     private readonly InvoiceParserService _parser;
+    private readonly SupabaseService _supabase;
     private readonly ILogger<DocumentsController> _logger;
 
     // İzin verilen dosya türleri
     private static readonly string[] AllowedTypes = ["image/jpeg", "image/png", "application/pdf"];
     private const long MaxFileSizeBytes = 20 * 1024 * 1024; // 20 MB
 
-    public DocumentsController(OcrService ocr, InvoiceParserService parser, ILogger<DocumentsController> logger)
+    public DocumentsController(OcrService ocr, InvoiceParserService parser, SupabaseService supabase, ILogger<DocumentsController> logger)
     {
         _ocr = ocr;
         _parser = parser;
+        _supabase = supabase;
         _logger = logger;
     }
 
     /// <summary>
-    /// Fatura veya belge yükler, OCR ile analiz eder ve sonuçları döner.
+    /// Fatura veya belge yükler, OCR ile analiz eder ve Supabase'e kaydeder.
     /// POST /api/documents/upload
     /// </summary>
+    public class DocumentMetadataDto
+    {
+        public string UserId { get; set; } = string.Empty;
+        public string FileName { get; set; } = string.Empty;
+        public string FileType { get; set; } = string.Empty;
+        public string CloudinaryUrl { get; set; } = string.Empty;
+        public string CloudinarySecureUrl { get; set; } = string.Empty;
+        public string CloudinaryPublicId { get; set; } = string.Empty;
+    }
+
+    /// <summary>
+    /// Frontend Cloudinary yüklemesi sonrası metadata kaydetmek için kullanılır.
+    /// POST /api/documents/metadata
+    /// </summary>
+    [HttpPost("metadata")]
+    public async Task<ActionResult<object>> SaveMetadata([FromBody] DocumentMetadataDto dto)
+    {
+        var docId = Guid.NewGuid();
+        var doc = new Document
+        {
+            Id = docId,
+            UserId = dto.UserId,
+            FileName = dto.FileName,
+            FileUrl = dto.CloudinarySecureUrl,
+            FileType = dto.FileType,
+            FileSizeBytes = 0,
+            Status = "beklemede",
+            UploadedAt = DateTime.UtcNow,
+            ParsedData = new InvoiceData 
+            {
+                Category = dto.FileType == "image" ? "MAKBUZ" : "FATURA",
+                TotalAmount = 0
+            }
+        };
+
+        var saved = await _supabase.SaveDocumentAsync(doc);
+        if (!saved) return BadRequest(new { message = "Veritabanına kaydedilemedi." });
+
+        return Ok(new { success = true, documentId = docId });
+    }
+
     [HttpPost("upload")]
     [RequestSizeLimit(20 * 1024 * 1024)]
-    public async Task<ActionResult<DocumentUploadResponse>> Upload([FromForm] IFormFile file)
+    public async Task<ActionResult<DocumentUploadResponse>> Upload([FromForm] IFormFile file, [FromForm] string? userId)
     {
         _logger.LogInformation("Dosya yükleme isteği alındı: {FileName}", file?.FileName);
 
@@ -59,45 +102,71 @@ public class DocumentsController : ControllerBase
         // Parse işlemi
         var parsedData = _parser.Parse(rawText);
 
-        // TODO: Supabase Storage'a kaydet ve DB'ye yaz (ilerleyen aşamada)
+        // Supabase'e kaydet
+        var doc = new Document
+        {
+            Id = docId,
+            UserId = userId ?? "anonymous",
+            FileName = file.FileName,
+            FileUrl = "", // Cloudinary URL ileride eklenecek
+            FileType = file.ContentType,
+            FileSizeBytes = file.Length,
+            Status = "tamamlandı",
+            UploadedAt = DateTime.UtcNow,
+            ParsedData = parsedData
+        };
+
+        var saved = await _supabase.SaveDocumentAsync(doc);
+
         var response = new DocumentUploadResponse
         {
             DocumentId = docId,
             FileName = file.FileName,
-            Status = "ONAYLANDI",
-            Message = "Belge başarıyla analiz edildi.",
+            Status = saved ? "tamamlandı" : "HATA",
+            Message = saved ? "Belge başarıyla analiz edildi ve veritabanına kaydedildi." : "Belge analiz edildi ancak veritabanına kaydedilemedi.",
             ParsedData = parsedData
         };
 
-        _logger.LogInformation("Belge işlendi. ID: {Id}, Firma: {Company}", docId, parsedData.CompanyName);
+        _logger.LogInformation("Belge işlendi. ID: {Id}, Firma: {Company}, DB: {Saved}", docId, parsedData.CompanyName, saved);
         return Ok(response);
     }
 
     /// <summary>
-    /// Tüm belgeleri listeler (şimdilik mock data).
-    /// GET /api/documents
+    /// Kullanıcının tüm belgelerini Supabase'den getirir.
+    /// GET /api/documents?userId={userId}
     /// </summary>
     [HttpGet]
-    public ActionResult<IEnumerable<object>> GetAll()
+    public async Task<ActionResult<object>> GetAll([FromQuery] string? userId)
     {
-        // TODO: Supabase'den gerçek veri çekilecek
-        var mockList = new[]
+        if (string.IsNullOrEmpty(userId))
         {
-            new { Id = Guid.NewGuid(), FileName = "Q1_Audit_Report.pdf", Status = "ONAYLANDI", UploadedAt = DateTime.UtcNow.AddHours(-2), Category = "Denetim" },
-            new { Id = Guid.NewGuid(), FileName = "Server_Maintenance_Inv_04.jpg", Status = "BEKLEMEDE", UploadedAt = DateTime.UtcNow.AddDays(-1), Category = "Faturalar" },
-            new { Id = Guid.NewGuid(), FileName = "Payroll_Summary_March.xlsx", Status = "ONAYLANDI", UploadedAt = DateTime.UtcNow.AddDays(-2), Category = "Bordro" },
-        };
-        return Ok(mockList);
+            return BadRequest(new { message = "userId parametresi gerekli." });
+        }
+
+        var documents = await _supabase.GetDocumentsByUserAsync(userId);
+
+        if (documents == null)
+        {
+            return StatusCode(500, new { message = "Belgeler yüklenirken bir hata oluştu." });
+        }
+
+        return Ok(documents);
     }
 
     /// <summary>
-    /// Belirli bir belgeyi getirir.
+    /// Belirli bir belgeyi Supabase'den getirir.
     /// GET /api/documents/{id}
     /// </summary>
     [HttpGet("{id:guid}")]
-    public ActionResult<object> GetById(Guid id)
+    public async Task<ActionResult<object>> GetById(Guid id)
     {
-        // TODO: Supabase'den gerçek veri
-        return Ok(new { Id = id, Message = "Belge burada gelecek." });
+        var document = await _supabase.GetDocumentByIdAsync(id.ToString());
+
+        if (document == null)
+        {
+            return NotFound(new { message = "Belge bulunamadı." });
+        }
+
+        return Ok(document);
     }
 }

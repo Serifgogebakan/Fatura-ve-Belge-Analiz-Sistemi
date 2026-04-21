@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { uploadDocument } from "@/lib/uploadDocument";
-import { Search, Download, Plus, MoreVertical, FileText, FileSpreadsheet, FileArchive, Zap, X, Loader2, CheckCircle2, Trash2 } from "lucide-react";
+import { Search, Download, Plus, MoreVertical, FileText, FileSpreadsheet, FileArchive, Zap, X, Loader2, CheckCircle2, Trash2, ChevronDown } from "lucide-react";
 
 type Document = {
   id: string;
@@ -30,6 +30,7 @@ export default function DocumentsPage() {
   const [uploadSuccess, setUploadSuccess] = useState(false);
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
   const [documentToDelete, setDocumentToDelete] = useState<Document | null>(null);
+  const [openDropdownId, setOpenDropdownId] = useState<string | null>(null);
   const [filter, setFilter] = useState<"all" | "FATURA" | "MAKBUZ">("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
@@ -40,16 +41,35 @@ export default function DocumentsPage() {
   }, []);
 
   async function fetchDocuments() {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) { router.push("/login"); return; }
-
-    const { data, error } = await supabase
-      .from("documents")
-      .select("*")
-      .eq("user_id", user.id)
-      .order("created_at", { ascending: false });
-
-    if (!error && data) setDocuments(data);
+    const userDataStr = localStorage.getItem('user');
+    if (!userDataStr) { router.push("/login"); return; }
+    
+    const user = JSON.parse(userDataStr);
+    try {
+      const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5057';
+      const res = await fetch(`${API_URL}/api/documents?userId=${user.id}`);
+      if (res.ok) {
+        const data = await res.json();
+        // Backend'den dönen özellikleri eşleştir
+        const mappedData = data.map((d: any) => ({
+          id: d.id,
+          name: d.fileName || "",
+          original_filename: d.fileName || "",
+          file_type: d.fileType || "pdf",
+          category: d.category || "",
+          cloudinary_secure_url: d.fileUrl || "",
+          status: d.status || "",
+          amount: d.totalAmount || 0,
+          currency: d.currency || "TRY",
+          payment_status: d.status || "",
+          created_at: d.uploadedAt || new Date().toISOString()
+        }));
+        setDocuments(mappedData);
+      }
+    } catch (err) {
+      console.error("Belgeler alınamadı", err);
+    }
+    
     setLoading(false);
   }
 
@@ -67,6 +87,22 @@ export default function DocumentsPage() {
     }
     
     setUploading(false);
+  }
+
+  async function handleStatusChange(docId: string, newStatus: string) {
+    // Optimistic UI update
+    setDocuments(docs => docs.map(d => d.id === docId ? { ...d, payment_status: newStatus } : d));
+    
+    // Update in Supabase
+    const { error } = await supabase
+      .from('documents')
+      .update({ payment_status: newStatus })
+      .eq('id', docId);
+      
+    if (error) {
+      alert("Durum güncellenirken hata oluştu: " + error.message);
+      fetchDocuments(); // revert
+    }
   }
 
   function onFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
@@ -285,11 +321,42 @@ export default function DocumentsPage() {
                         <td className="px-6 py-4 font-bold text-foreground text-sm">
                           {doc.amount ? `₺${formatCurrency(doc.amount)}` : "—"}
                         </td>
-                        <td className="px-6 py-4">
-                          <span className={`inline-flex items-center gap-1.5 text-xs font-bold`}>
-                            <span className={`w-1.5 h-1.5 rounded-full ${payment.dot}`}></span>
-                            <span className={payment.color}>{payment.text}</span>
-                          </span>
+                        <td className="px-6 py-4" onClick={(e) => e.stopPropagation()}>
+                          <div className="relative">
+                            <button 
+                              onClick={(e) => { e.stopPropagation(); setOpenDropdownId(openDropdownId === doc.id ? null : doc.id); }}
+                              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-border/50 bg-card hover:bg-muted-bg transition-colors shadow-sm cursor-pointer`}
+                            >
+                              <span className={`w-2 h-2 rounded-full ${payment.dot}`}></span>
+                              <span className={`text-xs font-bold ${payment.color}`}>{payment.text}</span>
+                              <ChevronDown size={14} className="text-muted ml-0.5" />
+                            </button>
+                            
+                            {openDropdownId === doc.id && (
+                              <div className="absolute top-10 left-0 w-36 bg-card border border-border rounded-xl shadow-xl overflow-hidden z-20 animate-in fade-in slide-in-from-top-2 duration-200">
+                                <div className="py-1">
+                                  {([
+                                    { val: "beklemede", text: "Beklemede", color: "text-amber-600", dot: "bg-amber-500" },
+                                    { val: "incelemede", text: "İncelemede", color: "text-blue-600", dot: "bg-blue-500" },
+                                    { val: "ödendi", text: "Ödendi", color: "text-emerald-600", dot: "bg-emerald-500" }
+                                  ]).map(opt => (
+                                    <button
+                                      key={opt.val}
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleStatusChange(doc.id, opt.val);
+                                        setOpenDropdownId(null);
+                                      }}
+                                      className={`w-full text-left px-4 py-2 text-xs font-bold ${opt.color} hover:bg-muted-bg transition-colors flex items-center gap-2`}
+                                    >
+                                      <span className={`w-1.5 h-1.5 rounded-full ${opt.dot}`}></span>
+                                      {opt.text}
+                                    </button>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+                          </div>
                         </td>
                         <td className="px-6 py-4 text-right flex items-center justify-end gap-1">
                           {doc.cloudinary_secure_url && (

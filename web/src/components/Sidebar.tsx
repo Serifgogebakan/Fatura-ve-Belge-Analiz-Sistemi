@@ -23,14 +23,23 @@ export default function Sidebar() {
 
   useEffect(() => {
     async function loadUser() {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (user) {
-        let name = user.user_metadata?.full_name || "Yeni Kullanıcı";
+      const userDataStr = localStorage.getItem('user');
+      if (userDataStr) {
+        const user = JSON.parse(userDataStr);
+        let name = user.fullName || user.full_name || user.name || "Yeni Kullanıcı";
         let role = "Üye";
 
-        const { data: prof } = await supabase.from("profiles").select("full_name, role").eq("id", user.id).single();
-        if (prof?.full_name) name = prof.full_name;
-        if (prof?.role) role = prof.role === "user" ? "Kullanıcı" : prof.role;
+        try {
+          const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5057';
+          const res = await fetch(`${API_URL}/api/auth/profile?userId=${user.id}`);
+          if (res.ok) {
+            const prof = await res.json();
+            if (prof?.fullName) name = prof.fullName;
+            if (prof?.role) role = prof.role === "user" ? "Kullanıcı" : prof.role;
+          }
+        } catch (err) {
+          console.error("Profil alınamadı:", err);
+        }
         
         setUserProfile({
           name,
@@ -50,8 +59,10 @@ export default function Sidebar() {
     { href: "/dashboard/team", label: "Ekip", icon: Users },
   ];
 
-  const handleLogout = async () => {
-    await supabase.auth.signOut();
+  const handleLogout = () => {
+    localStorage.removeItem('access_token');
+    localStorage.removeItem('refresh_token');
+    localStorage.removeItem('user');
     router.push("/login");
   };
 

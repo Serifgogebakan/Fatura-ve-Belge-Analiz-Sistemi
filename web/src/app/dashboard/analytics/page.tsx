@@ -23,52 +23,65 @@ export default function AnalyticsPage() {
   }, []);
 
   async function fetchAnalytics() {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) { router.push("/login"); return; }
+    const userDataStr = localStorage.getItem('user');
+    if (!userDataStr) { router.push("/login"); return; }
+    
+    const user = JSON.parse(userDataStr);
 
-    // Tüm belgeler
-    const { data: docs } = await supabase
-      .from("documents")
-      .select("*")
-      .eq("user_id", user.id);
+    try {
+      const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5057';
+      const res = await fetch(`${API_URL}/api/documents?userId=${user.id}`);
+      
+      if (res.ok) {
+        const data = await res.json();
+        const docs = data.map((d: any) => ({
+          id: d.id,
+          name: d.fileName || "",
+          category: d.category || "",
+          amount: d.totalAmount || 0,
+          status: d.status === "ONAYLANDI" ? "tamamlandı" : "beklemede",
+          cloudinary_secure_url: d.fileUrl || "",
+          created_at: d.uploadedAt || new Date().toISOString()
+        }));
 
-    if (docs) {
-      const total = docs.reduce((s, d) => s + (Number(d.amount) || 0), 0);
-      const tax = total * 0.18; // Tahmini KDV
-      const expenses = docs.filter(d => d.category === "FATURA").reduce((s, d) => s + (Number(d.amount) || 0), 0);
+        const total = docs.reduce((s: number, d: any) => s + (Number(d.amount) || 0), 0);
+        const tax = total * 0.18; // Tahmini KDV
+        const expenses = docs.filter((d: any) => d.category === "FATURA").reduce((s: number, d: any) => s + (Number(d.amount) || 0), 0);
 
-      setStats({
-        totalAmount: total,
-        totalTax: tax,
-        totalExpenses: expenses,
-        amountChange: 12.4,
-        docCount: docs.length,
-      });
+        setStats({
+          totalAmount: total,
+          totalTax: tax,
+          totalExpenses: expenses,
+          amountChange: 12.4,
+          docCount: docs.length,
+        });
 
-      // Kategori dağılımı
-      const catMap: Record<string, number> = {};
-      docs.forEach(d => {
-        const cat = d.category || "DİĞER";
-        catMap[cat] = (catMap[cat] || 0) + (Number(d.amount) || 0);
-      });
+        // Kategori dağılımı
+        const catMap: Record<string, number> = {};
+        docs.forEach((d: any) => {
+          const cat = d.category || "DİĞER";
+          catMap[cat] = (catMap[cat] || 0) + (Number(d.amount) || 0);
+        });
 
-      const colors = ["text-[#0f3d99] dark:text-blue-500", "text-[#8c2a00] dark:text-orange-500", "text-slate-300 dark:text-slate-600", "text-emerald-600 dark:text-emerald-400"];
-      const dotColors = ["bg-[#0f3d99] dark:bg-blue-500", "bg-[#8c2a00] dark:bg-orange-500", "bg-slate-300 dark:bg-slate-600", "bg-emerald-600 dark:bg-emerald-400"];
-      const entries = Object.entries(catMap).sort((a, b) => b[1] - a[1]);
-      const catTotal = entries.reduce((s, e) => s + e[1], 0) || 1;
+        const dotColors = ["bg-[#0f3d99] dark:bg-blue-500", "bg-[#8c2a00] dark:bg-orange-500", "bg-slate-300 dark:bg-slate-600", "bg-emerald-600 dark:bg-emerald-400"];
+        const entries = Object.entries(catMap).sort((a, b) => b[1] - a[1]);
+        const catTotal = entries.reduce((s, e) => s + e[1], 0) || 1;
 
-      setCategoryData(entries.map(([label, amount], i) => ({
-        label,
-        amount,
-        percent: Math.round((amount / catTotal) * 100),
-        color: dotColors[i % dotColors.length],
-      })));
+        setCategoryData(entries.map(([label, amount], i) => ({
+          label,
+          amount,
+          percent: Math.round((amount / catTotal) * 100),
+          color: dotColors[i % dotColors.length],
+        })));
 
-      // Son tamamlanan belgeler (rapor çıktısı gibi)
-      const completed = docs
-        .filter(d => d.status === "tamamlandı")
-        .slice(0, 3);
-      setRecentReports(completed);
+        // Son tamamlanan belgeler (rapor çıktısı gibi)
+        const completed = docs
+          .filter((d: any) => d.status === "tamamlandı")
+          .slice(0, 3);
+        setRecentReports(completed);
+      }
+    } catch (err) {
+      console.error(err);
     }
 
     setLoading(false);

@@ -2,7 +2,6 @@
 
 import React, { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { supabase } from "../../lib/supabase";
 import { uploadDocument } from "@/lib/uploadDocument";
 import { BarChart3, Upload, FileText, TrendingUp, MoreVertical, Loader2, CheckCircle2, Trash2 } from "lucide-react";
 
@@ -27,63 +26,41 @@ export default function DashboardPage() {
   const [recentDocs, setRecentDocs] = useState<any[]>([]);
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (!session) {
-        router.push("/login");
-      } else {
-        setUser(session.user);
-        fetchDashboardData(session.user.id);
-      }
-    });
+    // Backend'den gelen token kontrolü
+    const token = localStorage.getItem('access_token');
+    const userData = localStorage.getItem('user');
+    
+    if (!token || !userData) {
+      router.push("/login");
+    } else {
+      const parsedUser = JSON.parse(userData);
+      setUser(parsedUser);
+      fetchDashboardData(parsedUser.id);
+    }
   }, [router]);
 
   async function fetchDashboardData(userId: string) {
     try {
-      // Toplam belge sayısı
-      const { count: totalDocuments } = await supabase
-        .from("documents")
-        .select("*", { count: "exact", head: true })
-        .eq("user_id", userId);
+      const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5057';
 
-      // Toplam tutar
-      const { data: amountData } = await supabase
-        .from("documents")
-        .select("amount")
-        .eq("user_id", userId)
-        .not("amount", "is", null);
+      // Backend'den belgeleri çek
+      const res = await fetch(`${API_URL}/api/documents?userId=${userId}`);
+      const docs = res.ok ? await res.json() : [];
 
-      const totalAmount = amountData?.reduce((sum, d) => sum + (Number(d.amount) || 0), 0) ?? 0;
-
-      // Bekleyen belgeler
-      const { count: pendingCount } = await supabase
-        .from("documents")
-        .select("*", { count: "exact", head: true })
-        .eq("user_id", userId)
-        .eq("payment_status", "beklemede");
-
-      // Tamamlanan belgeler
-      const { count: completedCount } = await supabase
-        .from("documents")
-        .select("*", { count: "exact", head: true })
-        .eq("user_id", userId)
-        .eq("status", "tamamlandı");
+      const totalDocuments = docs.length;
+      const totalAmount = docs.reduce((sum: number, d: any) => sum + (Number(d.totalAmount) || 0), 0);
+      const pendingCount = docs.filter((d: any) => d.status === 'BEKLEMEDE').length;
+      const completedCount = docs.filter((d: any) => d.status === 'ONAYLANDI').length;
 
       setStats({
-        totalDocuments: totalDocuments ?? 0,
+        totalDocuments,
         totalAmount,
-        pendingCount: pendingCount ?? 0,
-        completedCount: completedCount ?? 0,
+        pendingCount,
+        completedCount,
       });
 
       // Son 5 belge
-      const { data: docs } = await supabase
-        .from("documents")
-        .select("*")
-        .eq("user_id", userId)
-        .order("created_at", { ascending: false })
-        .limit(5);
-
-      setRecentDocs(docs ?? []);
+      setRecentDocs(docs.slice(0, 5));
     } catch (err) {
       console.error("Dashboard veri çekme hatası:", err);
     } finally {
@@ -123,13 +100,13 @@ export default function DashboardPage() {
     if (!documentToDelete || !user) return;
 
     try {
-      const { error } = await supabase
-        .from("documents")
-        .delete()
-        .eq("id", documentToDelete.id);
+      const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5057';
+      const res = await fetch(`${API_URL}/api/documents/${documentToDelete.id}`, {
+        method: 'DELETE',
+      });
 
-      if (error) {
-        alert("Silme başarısız: " + error.message);
+      if (!res.ok) {
+        alert("Silme başarısız.");
       } else {
         fetchDashboardData(user.id);
       }

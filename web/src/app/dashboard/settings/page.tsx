@@ -42,68 +42,83 @@ export default function SettingsPage() {
   }, []);
 
   async function loadProfile() {
-    const { data: { user: authUser } } = await supabase.auth.getUser();
-    if (!authUser) { router.push("/login"); return; }
+    const userDataStr = localStorage.getItem('user');
+    if (!userDataStr) { router.push("/login"); return; }
+    
+    const authUser = JSON.parse(userDataStr);
     setUser(authUser);
 
-    // Profili çek
-    const { data: prof } = await supabase
-      .from("profiles")
-      .select("*")
-      .eq("id", authUser.id)
-      .single();
+    try {
+      const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5057';
+      const res = await fetch(`${API_URL}/api/auth/profile?userId=${authUser.id}`);
+      
+      if (res.ok) {
+        const prof = await res.json();
+        setProfile({
+          full_name: prof.fullName || authUser.fullName || authUser.full_name || "",
+          role: prof.role || "user",
+          company_name: prof.companyName || "",
+          tax_id: prof.taxId || "",
+          trade_reg_no: prof.tradeRegNo || "",
+          address: prof.address || "",
+          subscription_plan: prof.subscriptionPlan || "free",
+          subscription_renewal: prof.subscriptionRenewal || "",
+          document_limit: prof.documentLimit || 100,
+        });
+      } else {
+        setProfile((p: any) => ({
+          ...p,
+          full_name: authUser.fullName || authUser.full_name || "",
+        }));
+      }
 
-    if (prof) {
-      setProfile({
-        full_name: prof.full_name || authUser.user_metadata?.full_name || "",
-        role: prof.role || "user",
-        company_name: prof.company_name || "",
-        tax_id: prof.tax_id || "",
-        trade_reg_no: prof.trade_reg_no || "",
-        address: prof.address || "",
-        subscription_plan: prof.subscription_plan || "free",
-        subscription_renewal: prof.subscription_renewal || "",
-        document_limit: prof.document_limit || 100,
-      });
-    } else {
-      setProfile(p => ({
-        ...p,
-        full_name: authUser.user_metadata?.full_name || "",
-      }));
+      const docRes = await fetch(`${API_URL}/api/documents?userId=${authUser.id}`);
+      if (docRes.ok) {
+        const docs = await docRes.json();
+        setDocCount(docs.length);
+      }
+    } catch (err) {
+      console.error(err);
     }
-
-    // Belge sayısı
-    const { count } = await supabase
-      .from("documents")
-      .select("*", { count: "exact", head: true })
-      .eq("user_id", authUser.id);
-    setDocCount(count ?? 0);
 
     setLoading(false);
   }
 
   async function saveProfile() {
     if (!user) return;
+    if (!window.confirm("İşletme bilgilerinizi güncellemek istediğinize emin misiniz?")) return;
+
     setSaving(true);
 
-    const { error } = await supabase
-      .from("profiles")
-      .upsert({
-        id: user.id,
-        full_name: profile.full_name,
-        company_name: profile.company_name,
-        tax_id: profile.tax_id,
-        trade_reg_no: profile.trade_reg_no,
-        address: profile.address,
-        updated_at: new Date().toISOString(),
-      });
+    try {
+      const { error } = await supabase
+        .from('profiles')
+        .update({
+          full_name: profile.full_name,
+          company_name: profile.company_name,
+          tax_id: profile.tax_id,
+          trade_reg_no: profile.trade_reg_no,
+          address: profile.address
+        })
+        .eq('id', user.id);
 
-    setSaving(false);
-    if (!error) {
-      setSaved(true);
-      setTimeout(() => setSaved(false), 3000);
-    } else {
-      alert("Kayıt hatası: " + error.message);
+      if (!error) {
+        setSaved(true);
+        setTimeout(() => setSaved(false), 3000);
+        // localStorage'daki cache'i de yenile
+        const cachedUser = JSON.parse(localStorage.getItem('user') || '{}');
+        cachedUser.fullName = profile.full_name;
+        localStorage.setItem('user', JSON.stringify(cachedUser));
+        
+        // Reload settings to ensure everything is synced
+        loadProfile();
+      } else {
+        alert("Kayıt hatası: " + error.message);
+      }
+    } catch (err: any) {
+      alert("Bağlantı hatası: " + err.message);
+    } finally {
+      setSaving(false);
     }
   }
 
@@ -191,15 +206,27 @@ export default function SettingsPage() {
           </h3>
           
           <div className="space-y-6">
-            <div>
-              <label className="block text-xs font-bold uppercase tracking-wider text-muted mb-2">İŞLETME ADI</label>
-              <input 
-                type="text" 
-                value={profile.company_name}
-                onChange={(e) => setProfile(p => ({ ...p, company_name: e.target.value }))}
-                placeholder="İşletme adınızı girin..."
-                className="w-full bg-muted-bg border-none rounded-lg px-4 py-3 text-sm font-medium text-foreground outline-none focus:ring-2 focus:ring-accent/50" 
-              />
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-wider text-muted mb-2">İSİM SOYİSİM</label>
+                <input 
+                  type="text" 
+                  value={profile.full_name}
+                  onChange={(e) => setProfile(p => ({ ...p, full_name: e.target.value }))}
+                  placeholder="İsminiz..."
+                  className="w-full bg-muted-bg border-none rounded-lg px-4 py-3 text-sm font-medium text-foreground outline-none focus:ring-2 focus:ring-accent/50" 
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-wider text-muted mb-2">İŞLETME ADI</label>
+                <input 
+                  type="text" 
+                  value={profile.company_name}
+                  onChange={(e) => setProfile(p => ({ ...p, company_name: e.target.value }))}
+                  placeholder="İşletme adınızı girin..."
+                  className="w-full bg-muted-bg border-none rounded-lg px-4 py-3 text-sm font-medium text-foreground outline-none focus:ring-2 focus:ring-accent/50" 
+                />
+              </div>
             </div>
             
             <div className="grid grid-cols-2 gap-4">
