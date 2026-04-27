@@ -1,5 +1,5 @@
-name: mobile
-description: "A new Flutter project."
+name: billmind
+description: "BillMind - Akıllı Fatura ve Belge Yönetim Sistemi"
 # The following line prevents the package from being accidentally published to
 # pub.dev using `flutter pub publish`. This is preferred for private packages.
 publish_to: 'none' # Remove this line if you wish to publish to pub.dev
@@ -37,6 +37,10 @@ dependencies:
   google_fonts: ^8.0.2
   fl_chart: ^1.2.0
   supabase_flutter: ^2.12.2
+  image_picker: ^1.1.2
+  file_picker: ^8.1.2
+  path: ^1.9.0
+  http: ^1.6.0
 
 dev_dependencies:
   flutter_test:

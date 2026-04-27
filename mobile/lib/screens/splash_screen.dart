@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'onboarding_screen.dart';
+import '../home_page.dart';
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -25,11 +27,16 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
       CurvedAnimation(parent: _controller, curve: Curves.easeInOut),
     );
 
-    // 3 saniye sonra Onboarding'e geç
-    Future.delayed(const Duration(seconds: 3), () {
+    // 3 saniye sonra oturum kontrolü yap
+    Future.delayed(const Duration(seconds: 3), () async {
+      if (!mounted) return;
+      final session = Supabase.instance.client.auth.currentSession;
       Navigator.pushReplacement(
         context,
-        MaterialPageRoute(builder: (context) => const OnboardingScreen()),
+        MaterialPageRoute(
+          builder: (context) =>
+              session != null ? const HomePage() : const OnboardingScreen(),
+        ),
       );
     });
   }
