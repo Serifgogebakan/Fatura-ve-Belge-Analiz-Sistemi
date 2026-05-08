@@ -4,6 +4,11 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:http/http.dart' as http;
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'dart:io';
+import 'package:excel/excel.dart' hide Border;
+import 'package:path_provider/path_provider.dart';
+import 'package:share_plus/share_plus.dart';
+import 'package:fl_chart/fl_chart.dart';
 
 class ReportsScreen extends StatefulWidget {
   const ReportsScreen({super.key});
@@ -30,6 +35,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
 
   List<Map<String, dynamic>> _aiInsights = [];
   List<Map<String, dynamic>> _topSuppliers = [];
+  List<Map<String, dynamic>> _docsThisMonth = [];
 
   @override
   void initState() {
@@ -286,12 +292,141 @@ $dataStr
           _totalDocs = response.length;
           _topSuppliers = suppliersList;
           _aiInsights = insightsList;
+          _docsThisMonth = docsThisMonth;
           _isLoading = false;
         });
       }
     } catch (e) {
       if (mounted) setState(() => _isLoading = false);
     }
+  }
+
+  bool _isFetchingInsights = false;
+
+  Future<void> _fetchNewInsights() async {
+    if (_docsThisMonth.isEmpty) return;
+    setState(() => _isFetchingInsights = true);
+    
+    try {
+      final apiKey = dotenv.env['GROQ_API_KEY'];
+      if (apiKey != null && apiKey.isNotEmpty) {
+        String dataStr = _docsThisMonth.take(15).map((e) => "Firma: ${e['name']} | Kategori: ${e['category']} | Tutar: ₺${e['amount']}").join('\n');
+        
+        final prompt = '''Sen şirketin Finansal Asistanısın. Aşağıda bu ayki en büyük harcamalar var. Bana 2 farklı ve YENİ "Tasarruf Fırsatı" veya "Uyarı" çıkar.
+Lütfen önceki tavsiyelerden farklı ve yaratıcı açılara odaklan.
+DİKKAT: JSON formatında dön:
+[
+  {"title": "Kısa Başlık", "desc": "Açıklama", "amount": 1000}
+]
+
+Rastgele Zaman Damgası: ${DateTime.now().millisecondsSinceEpoch}
+Faturalar:
+$dataStr
+''';
+
+        final groqRes = await http.post(
+          Uri.parse('https://api.groq.com/openai/v1/chat/completions'),
+          headers: {
+            'Authorization': 'Bearer $apiKey',
+            'Content-Type': 'application/json',
+          },
+          body: jsonEncode({
+            'model': 'llama3-8b-8192',
+            'messages': [
+              {'role': 'user', 'content': prompt}
+            ],
+            'temperature': 0.9,
+          }),
+        );
+
+        if (groqRes.statusCode == 200) {
+          final resData = jsonDecode(utf8.decode(groqRes.bodyBytes));
+          String content = resData['choices'][0]['message']['content'];
+          int startIdx = content.indexOf('[');
+          int endIdx = content.lastIndexOf(']');
+          if (startIdx != -1 && endIdx != -1) {
+            content = content.substring(startIdx, endIdx + 1);
+            List<dynamic> parsed = jsonDecode(content);
+            List<Map<String, dynamic>> newInsights = [];
+            for (var item in parsed) {
+              newInsights.add({
+                'title': item['title'] ?? 'Finansal Uyarı',
+                'desc': item['desc'] ?? '',
+                'amount': double.tryParse(item['amount'].toString()) ?? 0.0,
+                'icon': Icons.auto_awesome
+              });
+            }
+            if (newInsights.isNotEmpty && mounted) {
+              setState(() {
+                _aiInsights = newInsights;
+              });
+            }
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint(e.toString());
+    } finally {
+      if (mounted) setState(() => _isFetchingInsights = false);
+    }
+  }
+
+  void _showInsightDetails(Map<String, dynamic> insight, Color primaryBlue, Color cardColor, Color textColor) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: cardColor,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+      builder: (context) => Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(color: primaryBlue.withOpacity(0.1), shape: BoxShape.circle),
+                  child: Icon(insight['icon'], color: primaryBlue, size: 28),
+                ),
+                const SizedBox(width: 16),
+                Expanded(child: Text(insight['title'], style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: textColor, height: 1.2))),
+              ],
+            ),
+            const SizedBox(height: 24),
+            Text('Yapay Zeka Değerlendirmesi', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.grey.shade500, letterSpacing: 1.2)),
+            const SizedBox(height: 8),
+            Text(insight['desc'], style: TextStyle(fontSize: 14, color: textColor, height: 1.5)),
+            const SizedBox(height: 24),
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(color: Colors.green.withOpacity(0.1), borderRadius: BorderRadius.circular(12)),
+              child: Row(
+                children: [
+                  const Icon(Icons.savings_outlined, color: Colors.green),
+                  const SizedBox(width: 12),
+                  Expanded(child: Text('Tahmini Tasarruf / Kazanç', style: TextStyle(fontWeight: FontWeight.w600, color: Colors.green.shade700))),
+                  Text(_formatCurrency(insight['amount'] as double), style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.green)),
+                ],
+              ),
+            ),
+            const SizedBox(height: 32),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                onPressed: () => Navigator.pop(context),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: primaryBlue,
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                ),
+                child: const Text('Anladım', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   String _formatCurrency(double amount) {
@@ -313,6 +448,166 @@ $dataStr
       return '₺${(amount / 1000).toStringAsFixed(1)}K';
     }
     return _formatCurrency(amount);
+  }
+
+  Future<void> _exportToExcel() async {
+    if (_docsThisMonth.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Dışa aktarılacak veri bulunamadı.')));
+      return;
+    }
+    
+    try {
+      var excel = Excel.createExcel();
+      Sheet sheetObject = excel['Fatura Raporu'];
+      excel.setDefaultSheet('Fatura Raporu');
+
+      sheetObject.appendRow([
+        TextCellValue('Firma Adı'),
+        TextCellValue('Kategori'),
+        TextCellValue('Tutar'),
+        TextCellValue('Belge Tipi')
+      ]);
+
+      for (var doc in _docsThisMonth) {
+        final tipi = (doc['belge_tipi'] as String? ?? doc['tipi'] as String? ?? 'gider').toLowerCase();
+        sheetObject.appendRow([
+          TextCellValue(doc['name']?.toString() ?? ''),
+          TextCellValue(doc['category']?.toString() ?? ''),
+          DoubleCellValue((doc['amount'] as num?)?.toDouble() ?? 0.0),
+          TextCellValue(tipi),
+        ]);
+      }
+
+      var fileBytes = excel.save();
+      if (fileBytes != null) {
+        final directory = await getApplicationDocumentsDirectory();
+        final path = '${directory.path}/Aylik_Fatura_Raporu.xlsx';
+        File(path)
+          ..createSync(recursive: true)
+          ..writeAsBytesSync(fileBytes);
+        
+        await Share.shareXFiles([XFile(path)], text: 'Aylık Fatura Raporu (Excel)');
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Dışa aktarım hatası: $e')));
+    }
+  }
+
+  Widget _buildCategoryPieChart(bool isDark, Color textColor, Color cardColor) {
+    if (_docsThisMonth.isEmpty) return const SizedBox.shrink();
+    
+    Map<String, double> catTotals = {};
+    double totalExpense = 0;
+    for (var doc in _docsThisMonth) {
+      final tipi = (doc['belge_tipi'] as String? ?? doc['tipi'] as String? ?? 'gider').toLowerCase();
+      if (tipi != 'gelir') {
+        final cat = (doc['category'] as String? ?? 'Diğer');
+        catTotals[cat] = (catTotals[cat] ?? 0) + (doc['amount'] as num? ?? 0).toDouble();
+        totalExpense += (doc['amount'] as num? ?? 0).toDouble();
+      }
+    }
+
+    if (catTotals.isEmpty || totalExpense == 0) return const SizedBox.shrink();
+
+    var sortedCats = catTotals.entries.toList()..sort((a, b) => b.value.compareTo(a.value));
+
+    List<PieChartSectionData> sections = [];
+    final colors = [
+      const Color(0xFF0052FF), // Primary Blue
+      const Color(0xFF4C7FFF), // Lighter Blue
+      const Color(0xFF99B9FF), // Very Light Blue
+      const Color(0xFFE5EDFF), // Pale Blue
+      const Color(0xFF2E3B5B), // Dark Blue
+      const Color(0xFF64748B), // Slate
+    ];
+    int colorIdx = 0;
+    
+    for (var cat in sortedCats) {
+      final amount = cat.value;
+      sections.add(PieChartSectionData(
+        color: colors[colorIdx % colors.length],
+        value: amount,
+        title: '',
+        radius: 30,
+      ));
+      colorIdx++;
+    }
+
+    String totalStr = '';
+    if (totalExpense >= 1000000) {
+      totalStr = '₺${(totalExpense / 1000000).toStringAsFixed(1)}M';
+    } else if (totalExpense >= 1000) {
+      totalStr = '₺${(totalExpense / 1000).toStringAsFixed(1)}K';
+    } else {
+      totalStr = _formatCurrency(totalExpense);
+    }
+
+    return Container(
+      padding: const EdgeInsets.all(24),
+      decoration: BoxDecoration(
+        color: cardColor,
+        borderRadius: BorderRadius.circular(24),
+        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.02), blurRadius: 10, offset: const Offset(0, 4))],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Center(
+            child: SizedBox(
+              height: 200,
+              child: Stack(
+                alignment: Alignment.center,
+                children: [
+                  PieChart(
+                    PieChartData(
+                      sections: sections,
+                      centerSpaceRadius: 70,
+                      sectionsSpace: 0,
+                      startDegreeOffset: -90,
+                    ),
+                  ),
+                  Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text('TOPLAM', style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.grey.shade500, letterSpacing: 1.2)),
+                      const SizedBox(height: 4),
+                      Text(totalStr, style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900, color: textColor)),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 32),
+          Text('Gider Dağılımı', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: textColor)),
+          const SizedBox(height: 4),
+          Text('Son 30 günlük operasyonel harcama analizi.', style: TextStyle(fontSize: 12, color: Colors.grey.shade500)),
+          const SizedBox(height: 20),
+          ...List.generate(sortedCats.length, (index) {
+            final cat = sortedCats[index];
+            final pct = (cat.value / totalExpense) * 100;
+            final color = colors[index % colors.length];
+            return Container(
+              margin: const EdgeInsets.only(bottom: 12),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+              decoration: BoxDecoration(
+                color: isDark ? const Color(0xFF0F172A) : const Color(0xFFF8FAFC),
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: Row(
+                children: [
+                  Container(width: 8, height: 8, decoration: BoxDecoration(color: color, shape: BoxShape.circle)),
+                  const SizedBox(width: 12),
+                  Text(cat.key, style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: textColor)),
+                  const Spacer(),
+                  Text('%${pct.toStringAsFixed(0)}', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: color)),
+                ],
+              ),
+            );
+          }),
+        ],
+      ),
+    );
   }
 
   @override
@@ -385,7 +680,7 @@ $dataStr
                       const SizedBox(width: 12),
                       Expanded(
                         child: ElevatedButton(
-                          onPressed: () {},
+                          onPressed: _exportToExcel,
                           style: ElevatedButton.styleFrom(
                             backgroundColor: primaryBlue,
                             padding: const EdgeInsets.symmetric(vertical: 12),
@@ -438,6 +733,11 @@ $dataStr
                       ],
                     ),
                   ),
+
+                  const SizedBox(height: 32),
+                  // Kategori Pasta Grafiği
+                  _buildCategoryPieChart(isDark, textColor, cardColor),
+                  
                   const SizedBox(height: 32),
 
                   // Tahmini Vergi Yükümlülüğü
@@ -457,50 +757,40 @@ $dataStr
                   const SizedBox(height: 32),
 
                   // Yapay Zeka Tasarruf Fırsatları
-                  Container(
-                    padding: const EdgeInsets.all(20),
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        colors: isDark ? [const Color(0xFF1E293B), const Color(0xFF0F172A)] : [Colors.blueGrey.shade50, Colors.grey.shade100],
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                      ),
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            Container(
-                              padding: const EdgeInsets.all(6),
-                              decoration: BoxDecoration(color: primaryBlue, shape: BoxShape.circle),
-                              child: const Icon(Icons.auto_awesome, color: Colors.white, size: 16),
-                            ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: Text('Yapay Zeka\nTasarruf Fırsatları', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: textColor, height: 1.2)),
-                            ),
-                          ],
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text('Yapay Zeka\nAnalizleri', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: textColor, height: 1.2)),
+                      GestureDetector(
+                        onTap: _isFetchingInsights ? null : _fetchNewInsights,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFE5EDFF),
+                            borderRadius: BorderRadius.circular(20),
+                          ),
+                          child: _isFetchingInsights 
+                            ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2))
+                            : const Text('Yeni\nÖngörüler', textAlign: TextAlign.center, style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Color(0xFF2E3B5B), height: 1.2)),
                         ),
-                        const SizedBox(height: 20),
-                        ..._aiInsights.map((insight) {
-                          return Padding(
-                            padding: const EdgeInsets.only(bottom: 12),
-                            child: _buildAiInsightCard(
-                              insight['title'],
-                              insight['desc'],
-                              _formatCurrency(insight['amount'] as double),
-                              insight['icon'],
-                              cardColor,
-                              textColor,
-                              primaryBlue,
-                            ),
-                          );
-                        }).toList(),
-                      ],
-                    ),
+                      ),
+                    ],
                   ),
+                  const SizedBox(height: 20),
+                  ...List.generate(_aiInsights.length, (index) {
+                    final insight = _aiInsights[index];
+                    return Padding(
+                      padding: const EdgeInsets.only(bottom: 16),
+                      child: _buildAiInsightCard(
+                        insight,
+                        cardColor,
+                        textColor,
+                        primaryBlue,
+                        index == 0,
+                        isDark,
+                      ),
+                    );
+                  }),
                   const SizedBox(height: 32),
 
                   // Uyum Skoru
@@ -667,44 +957,48 @@ $dataStr
                   const SizedBox(height: 32),
 
                   // Tedarikçi Verimliliği
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text('Tedarikçi Verimliliği', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: textColor)),
-                      Text('Tümü', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: primaryBlue)),
-                    ],
-                  ),
+                  Text('Tedarikçi Verimliliği', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: textColor)),
                   const SizedBox(height: 16),
                   
                   if (_topSuppliers.isEmpty)
                     Text('Yeterli tedarikçi verisi yok.', style: TextStyle(color: subtitleColor)),
                     
-                  ..._topSuppliers.map((sup) {
-                    // Avatar için isim baş harflerini al
-                    String initials = 'F';
-                    if (sup['name'] != null && sup['name'].toString().isNotEmpty) {
-                      var parts = sup['name'].toString().split(' ');
-                      if (parts.length > 1) {
-                        initials = '${parts[0][0]}${parts[1][0]}'.toUpperCase();
-                      } else {
-                        initials = sup['name'].toString().substring(0, 1).toUpperCase();
-                      }
-                    }
-                    
-                    return Padding(
-                      padding: const EdgeInsets.only(bottom: 12),
-                      child: _buildSupplierItem(
-                        initials, 
-                        sup['name'], 
-                        'Tedarikçi', 
-                        _formatK(sup['amount']), 
-                        5, // Rastgele veya amount'a göre yıldız verilebilir
-                        primaryBlue.withOpacity(0.6), 
-                        textColor, 
-                        isDark
+                  if (_topSuppliers.isNotEmpty)
+                    Container(
+                      decoration: BoxDecoration(
+                        color: cardColor,
+                        borderRadius: BorderRadius.circular(20),
+                        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.02), blurRadius: 10, offset: const Offset(0, 4))],
                       ),
-                    );
-                  }).toList(),
+                      child: Column(
+                        children: [
+                          Padding(
+                            padding: const EdgeInsets.all(16),
+                            child: Row(
+                              children: [
+                                Expanded(flex: 3, child: Text('TEDARİKÇİ', style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.grey.shade500, letterSpacing: 1))),
+                                Expanded(flex: 3, child: Text('HARCAMA', style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.grey.shade500, letterSpacing: 1))),
+                                Expanded(flex: 2, child: Align(alignment: Alignment.centerRight, child: Text('VERİM\nSKORU', textAlign: TextAlign.right, style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.grey.shade500, letterSpacing: 1)))),
+                              ],
+                            ),
+                          ),
+                          Divider(height: 1, color: Colors.grey.withOpacity(0.1)),
+                          ...List.generate(_topSuppliers.length, (index) {
+                            final sup = _topSuppliers[index];
+                            IconData icon; Color iconBg; Color iconColor; Color barColor; double pct;
+                            if (index == 0) {
+                              icon = Icons.local_shipping_outlined; iconBg = Colors.grey.shade200; iconColor = Colors.grey.shade700; barColor = const Color(0xFF0052FF); pct = 0.8;
+                            } else if (index == 1) {
+                              icon = Icons.cloud_outlined; iconBg = Colors.grey.shade200; iconColor = Colors.grey.shade700; barColor = const Color(0xFF0052FF); pct = 0.6;
+                            } else {
+                              icon = Icons.print_outlined; iconBg = Colors.grey.shade200; iconColor = Colors.grey.shade700; barColor = Colors.red.shade600; pct = 0.4;
+                            }
+                            if (isDark) iconBg = Colors.grey.shade800;
+                            return _buildSupplierItem(sup['name'], _formatCurrency(sup['amount']), iconBg, iconColor, icon, pct, barColor, textColor);
+                          }),
+                        ],
+                      ),
+                    ),
                   
                   const SizedBox(height: 80), // Bottom padding for navbar
                 ],
@@ -806,107 +1100,107 @@ $dataStr
     );
   }
 
-  Widget _buildAiInsightCard(String title, String desc, String amount, IconData icon, Color cardColor, Color textColor, Color primaryBlue) {
+  Widget _buildAiInsightCard(Map<String, dynamic> insight, Color cardColor, Color textColor, Color primaryBlue, bool isPrimary, bool isDark) {
+    Color bgColor = isPrimary 
+      ? const Color(0xFF0052FF) 
+      : (isDark ? const Color(0xFF1E293B) : const Color(0xFFE2E8F0));
+    
+    Color contentColor = isPrimary ? Colors.white : textColor;
+    Color descColor = isPrimary ? Colors.white.withOpacity(0.9) : Colors.grey.shade600;
+    
+    String title = insight['title'] ?? '';
+    String desc = insight['desc'] ?? '';
+    IconData icon = insight['icon'] ?? Icons.auto_awesome;
+
     return Container(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
-        color: cardColor,
-        borderRadius: BorderRadius.circular(16),
+        color: bgColor,
+        borderRadius: BorderRadius.circular(24),
       ),
-      child: Row(
+      child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(icon, color: primaryBlue, size: 24),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(title, style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: textColor)),
-                const SizedBox(height: 6),
-                Text(desc, style: TextStyle(fontSize: 11, color: Colors.grey.shade500, height: 1.4)),
-                const SizedBox(height: 12),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.end,
-                  children: [
-                    Text('Tahmini: ', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500, color: primaryBlue)),
-                    Text(amount, style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: primaryBlue)),
-                  ],
-                ),
-                Align(
-                  alignment: Alignment.centerRight,
-                  child: TextButton(
-                    onPressed: () {
-                      showDialog(
-                        context: context,
-                        builder: (context) => AlertDialog(
-                          backgroundColor: cardColor,
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-                          title: Row(
-                            children: [
-                              Icon(icon, color: primaryBlue),
-                              const SizedBox(width: 8),
-                              Expanded(child: Text(title, style: TextStyle(color: textColor, fontSize: 16, fontWeight: FontWeight.bold))),
-                            ],
-                          ),
-                          content: Text(desc, style: TextStyle(color: textColor, height: 1.5)),
-                          actions: [
-                            TextButton(
-                              onPressed: () => Navigator.pop(context),
-                              child: Text('Kapat', style: TextStyle(color: primaryBlue, fontWeight: FontWeight.bold)),
-                            ),
-                          ],
-                        ),
-                      );
-                    },
-                    style: TextButton.styleFrom(padding: EdgeInsets.zero, minimumSize: const Size(0, 0), tapTargetSize: MaterialTapTargetSize.shrinkWrap),
-                    child: Text('İncele', style: TextStyle(fontSize: 11, color: primaryBlue)),
-                  ),
-                ),
-              ],
+          Icon(icon, color: isPrimary ? Colors.white : primaryBlue, size: 28),
+          const SizedBox(height: 16),
+          if (isPrimary) ...[
+            Text(desc.isNotEmpty ? desc : title, style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600, color: contentColor, height: 1.3)),
+            const SizedBox(height: 24),
+            ElevatedButton(
+              onPressed: () => _showInsightDetails(insight, primaryBlue, cardColor, textColor),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.white,
+                foregroundColor: const Color(0xFF0052FF),
+                elevation: 0,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+              ),
+              child: const Text('Raporu İncele', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
             ),
-          ),
+          ] else ...[
+            Text(title, style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: contentColor)),
+            const SizedBox(height: 8),
+            Text(desc, style: TextStyle(fontSize: 12, color: descColor, height: 1.4)),
+            const SizedBox(height: 16),
+            InkWell(
+              onTap: () => _showInsightDetails(insight, primaryBlue, cardColor, textColor),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text('Detaylar', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: primaryBlue)),
+                  const SizedBox(width: 4),
+                  Icon(Icons.arrow_forward_ios, size: 10, color: primaryBlue),
+                ],
+              ),
+            ),
+          ],
         ],
       ),
     );
   }
 
-  Widget _buildSupplierItem(String initials, String name, String type, String amount, int stars, Color avatarBg, Color textColor, bool isDark) {
-    return Row(
-      children: [
-        Container(
-          width: 40, height: 40,
-          decoration: BoxDecoration(color: avatarBg, shape: BoxShape.circle),
-          alignment: Alignment.center,
-          child: Text(initials, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13)),
-        ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(name, style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: textColor)),
-              Text(type, style: TextStyle(fontSize: 11, color: Colors.grey.shade500)),
-            ],
+  Widget _buildSupplierItem(String name, String amount, Color iconBg, Color iconColor, IconData icon, double percentage, Color barColor, Color textColor) {
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 16),
+      decoration: BoxDecoration(
+        border: Border(bottom: BorderSide(color: Colors.grey.withOpacity(0.1))),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 36, height: 36,
+            decoration: BoxDecoration(color: iconBg, borderRadius: BorderRadius.circular(10)),
+            child: Icon(icon, color: iconColor, size: 18),
           ),
-        ),
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.end,
-          children: [
-            Text(amount, style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: textColor)),
-            const SizedBox(height: 4),
-            Row(
-              children: List.generate(5, (index) {
-                return Icon(
-                  index < stars ? Icons.star : Icons.star_border,
-                  size: 10,
-                  color: const Color(0xFF2563EB),
-                );
-              }),
+          const SizedBox(width: 12),
+          Expanded(
+            flex: 3,
+            child: Text(name.replaceAll(' ', '\n'), style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: textColor, height: 1.2)),
+          ),
+          Expanded(
+            flex: 3,
+            child: Text(amount, style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: Colors.grey.shade600)),
+          ),
+          Expanded(
+            flex: 2,
+            child: Align(
+              alignment: Alignment.centerRight,
+              child: SizedBox(
+                width: 30,
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(2),
+                  child: LinearProgressIndicator(
+                    value: percentage,
+                    minHeight: 4,
+                    backgroundColor: Colors.transparent,
+                    valueColor: AlwaysStoppedAnimation<Color>(barColor),
+                  ),
+                ),
+              ),
             ),
-          ],
-        ),
-      ],
+          ),
+        ],
+      ),
     );
   }
 }

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'document_detail_screen.dart';
 
 class DocumentsScreen extends StatefulWidget {
   const DocumentsScreen({super.key});
@@ -276,8 +277,52 @@ class _DocumentsScreenState extends State<DocumentsScreen> {
     // Sol kenarlık rengi - gecikti ise kırmızı
     final borderColor = status.toLowerCase() == 'gecikti' ? Colors.red.shade400 : Colors.transparent;
 
-    return GestureDetector(
-      onTap: () => _showEditDocDialog(context, doc),
+    return Dismissible(
+      key: Key(doc['id'].toString()),
+      direction: DismissDirection.startToEnd,
+      confirmDismiss: (direction) async {
+        return await showDialog<bool>(
+          context: context,
+          builder: (c) => AlertDialog(
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            title: const Text('Silmek istediğinize emin misiniz?'),
+            content: const Text('Bu belgeyi silmek istediğininze emin misiniz? Bu işlem geri alınamaz.'),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(c, false), child: Text('İptal', style: TextStyle(color: Colors.grey.shade500))),
+              ElevatedButton(
+                onPressed: () => Navigator.pop(c, true),
+                style: ElevatedButton.styleFrom(backgroundColor: Colors.red.shade400, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))),
+                child: const Text('Evet, Sil', style: TextStyle(color: Colors.white)),
+              ),
+            ],
+          ),
+        );
+      },
+      onDismissed: (direction) async {
+        await _supabase.from('documents').delete().eq('id', doc['id']);
+        _loadDocuments();
+      },
+      background: Container(
+        margin: const EdgeInsets.only(bottom: 10),
+        padding: const EdgeInsets.only(left: 20),
+        alignment: Alignment.centerLeft,
+        decoration: BoxDecoration(color: Colors.red.shade400, borderRadius: BorderRadius.circular(16)),
+        child: const Icon(Icons.delete_outline, color: Colors.white, size: 28),
+      ),
+      child: GestureDetector(
+      onTap: () {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => DocumentDetailScreen(
+              imageUrl: doc['cloudinary_secure_url'],
+              documentName: doc['name'],
+              documentData: doc,
+              isViewMode: true,
+            ),
+          ),
+        ).then((_) => _loadDocuments());
+      },
       child: Container(
         margin: const EdgeInsets.only(bottom: 10),
         decoration: BoxDecoration(
@@ -288,18 +333,19 @@ class _DocumentsScreenState extends State<DocumentsScreen> {
         child: IntrinsicHeight(
           child: Row(
             children: [
-              // Sol renkli şerit (gecikti ise kırmızı)
-              if (status.toLowerCase() == 'gecikti')
-                Container(
-                  width: 4,
-                  decoration: BoxDecoration(
-                    color: borderColor,
-                    borderRadius: const BorderRadius.only(
-                      topLeft: Radius.circular(16),
-                      bottomLeft: Radius.circular(16),
-                    ),
+              // Sol renkli şerit (gelir ise yeşil, gider ise kırmızı, gecikti ise koyurakırmızı)
+              Container(
+                width: 4,
+                decoration: BoxDecoration(
+                  color: status.toLowerCase() == 'gecikti' 
+                    ? Colors.red.shade700 
+                    : isGelir ? Colors.green.shade500 : Colors.red.shade400,
+                  borderRadius: const BorderRadius.only(
+                    topLeft: Radius.circular(16),
+                    bottomLeft: Radius.circular(16),
                   ),
                 ),
+              ),
               Expanded(
                 child: Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
@@ -308,12 +354,12 @@ class _DocumentsScreenState extends State<DocumentsScreen> {
                       Container(
                         padding: const EdgeInsets.all(10),
                         decoration: BoxDecoration(
-                          color: isGelir ? Colors.green.withOpacity(0.1) : Colors.blue.withOpacity(0.08),
+                          color: isGelir ? Colors.green.withOpacity(0.1) : Colors.red.withOpacity(0.08),
                           borderRadius: BorderRadius.circular(12),
                         ),
                         child: Icon(
-                          isGelir ? Icons.receipt_outlined : Icons.description_outlined,
-                          color: isGelir ? Colors.green.shade600 : Colors.blue.shade500,
+                          isGelir ? Icons.trending_up_rounded : Icons.trending_down_rounded,
+                          color: isGelir ? Colors.green.shade600 : Colors.red.shade400,
                           size: 20,
                         ),
                       ),
@@ -338,10 +384,10 @@ class _DocumentsScreenState extends State<DocumentsScreen> {
                         crossAxisAlignment: CrossAxisAlignment.end,
                         children: [
                           Text(
-                            '${isGelir ? "+" : ""}₺${_fmt(amount)}',
+                            '${isGelir ? "+" : "-"}₺${_fmt(amount)}',
                             style: TextStyle(
                               fontSize: 14, fontWeight: FontWeight.bold,
-                              color: isGelir ? Colors.green.shade600 : (isDark ? Colors.white : Colors.black87),
+                              color: isGelir ? Colors.green.shade600 : Colors.red.shade500,
                             ),
                           ),
                           const SizedBox(height: 4),
@@ -356,23 +402,17 @@ class _DocumentsScreenState extends State<DocumentsScreen> {
                           ),
                         ],
                       ),
-                      const SizedBox(width: 4),
-                      IconButton(
-                        icon: Icon(Icons.more_vert, color: Colors.grey.shade400, size: 20),
-                        onPressed: () => _showDocOptions(context, doc, isDark),
-                        padding: EdgeInsets.zero,
-                        constraints: const BoxConstraints(),
-                      ),
                     ],
                   ),
                 ),
               ),
             ],
-          ),
-        ),
-      ),
-    );
-  }
+          ), // Row
+        ), // IntrinsicHeight
+      ), // Container
+    ), // GestureDetector
+  ); // Dismissible
+}
 
   String _fmt(double v) {
     final s = v.toStringAsFixed(2).replaceAll('.', ',');
@@ -474,7 +514,8 @@ class _DocumentsScreenState extends State<DocumentsScreen> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            ListTile(leading: const Icon(Icons.visibility_outlined), title: const Text('Görüntüle'), onTap: () { Navigator.pop(ctx); _showDocumentImage(context, doc); }),
+            ListTile(leading: const Icon(Icons.visibility_outlined), title: const Text('Görseli Büyüt'), onTap: () { Navigator.pop(ctx); _showDocumentImage(context, doc); }),
+            ListTile(leading: const Icon(Icons.edit_outlined), title: const Text('Düzenle'), onTap: () { Navigator.pop(ctx); _showEditDocDialog(context, doc); }),
             ListTile(
               leading: Icon(Icons.delete_outline, color: Colors.red.shade400),
               title: Text('Sil', style: TextStyle(color: Colors.red.shade400)),

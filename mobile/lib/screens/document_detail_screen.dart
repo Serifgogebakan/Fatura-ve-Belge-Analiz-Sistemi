@@ -2,17 +2,22 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 class DocumentDetailScreen extends StatefulWidget {
   final File? imageFile;
   final String? imageUrl;
   final String? documentName;
+  final Map<String, dynamic>? documentData;
+  final bool isViewMode;
 
   const DocumentDetailScreen({
     super.key,
     this.imageFile,
     this.imageUrl,
     this.documentName,
+    this.documentData,
+    this.isViewMode = false,
   });
 
   @override
@@ -25,11 +30,39 @@ class _DocumentDetailScreenState extends State<DocumentDetailScreen> {
   String _tutar = 'Taranıyor...';
   String _ocrMetni = 'Metin çıkarılıyor, lütfen bekleyin...';
   bool _isScanning = true;
+  String _selectedCategory = 'Diğer';
+  String _selectedBelgeTipi = 'gider';
+
+  static const _categories = ['Fatura', 'Fiş', 'Sözleşme', 'Sağlık', 'Finans', 'Lojistik', 'Personel', 'Vergi', 'Diğer'];
+  static const _belgeTipleri = ['gelir', 'gider'];
 
   @override
   void initState() {
     super.initState();
-    _processImage();
+    if (widget.isViewMode && widget.documentData != null) {
+      _firmaAdi = widget.documentData!['name']?.toString() ?? 'Bilinmiyor';
+      final amount = widget.documentData!['amount'];
+      _tutar = amount != null ? '₺$amount' : '0.00';
+      _selectedCategory = widget.documentData!['category']?.toString() ?? 'Diğer';
+      _selectedBelgeTipi = widget.documentData!['belge_tipi']?.toString() ?? 'gider';
+      
+      final createdAt = widget.documentData!['created_at'] as String?;
+      if (createdAt != null) {
+        try {
+          final dt = DateTime.parse(createdAt).toLocal();
+          _tarih = '${dt.day.toString().padLeft(2, '0')}.${dt.month.toString().padLeft(2, '0')}.${dt.year}';
+        } catch (_) {
+          _tarih = createdAt;
+        }
+      } else {
+        _tarih = '-';
+      }
+      
+      _ocrMetni = 'Bu belge daha önce sisteme kaydedilmiştir.';
+      _isScanning = false;
+    } else {
+      _processImage();
+    }
   }
 
   Future<void> _processImage() async {
@@ -123,6 +156,11 @@ class _DocumentDetailScreenState extends State<DocumentDetailScreen> {
   }
 
   void _belgeyiOnayla() {
+    if (widget.isViewMode) {
+      // Sadece geri dön, belki ileride güncelleme eklenebilir
+      Navigator.of(context).pop(true);
+      return;
+    }
     // Burada belgeyi onaylayıp verileri bir önceki ekrana (upload_screen) döndürüyoruz
     final data = {
       'firmaAdi': _firmaAdi,
@@ -131,6 +169,168 @@ class _DocumentDetailScreenState extends State<DocumentDetailScreen> {
       'ocrMetni': _ocrMetni,
     };
     Navigator.of(context).pop(data);
+  }
+
+  Future<void> _confirmAndUpdate(String title, String newValue, Function(String) onSave) async {
+    final bool? confirm = await showDialog<bool>(
+      context: context,
+      builder: (c) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text('Emin misiniz?'),
+        content: Text('$title bilgisini "$newValue" olarak güncellemek istediğinize emin misiniz?'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(c, false), child: Text('İptal', style: TextStyle(color: Colors.grey.shade500))),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Theme.of(context).brightness == Brightness.dark ? const Color(0xFF3B82F6) : const Color(0xFF0056D2),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+            ),
+            onPressed: () => Navigator.pop(c, true), 
+            child: const Text('Evet, Güncelle', style: TextStyle(color: Colors.white))
+          ),
+        ],
+      ),
+    );
+
+    if (confirm == true) {
+      try {
+        final docId = widget.documentData!['id'];
+        Map<String, dynamic> updateData = {};
+        
+        if (title == 'Firma Adı') {
+          updateData['name'] = newValue;
+        } else if (title == 'Tutar') {
+          String tAmount = newValue.replaceAll('₺', '').replaceAll('.', '').replaceAll(',', '.').trim();
+          updateData['amount'] = double.tryParse(tAmount);
+        } else if (title == 'Tarih') {
+          final parts = newValue.split('.');
+          if (parts.length == 3) {
+             int y = parts[2].length == 2 ? int.parse('20${parts[2]}') : int.parse(parts[2]);
+             final dt = DateTime(y, int.parse(parts[1]), int.parse(parts[0]), 12, 0, 0).toUtc().toIso8601String();
+             updateData['created_at'] = dt;
+          }
+        }
+        
+        await Supabase.instance.client.from('documents').update(updateData).eq('id', docId);
+        
+        if (mounted) {
+          setState(() {
+            onSave(newValue);
+          });
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Başarıyla güncellendi!')));
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Güncelleme hatası: $e')));
+        }
+      }
+    }
+  }
+
+  Future<void> _showCategorySelector() async {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final primaryColor = isDark ? const Color(0xFF3B82F6) : const Color(0xFF0056D2);
+    final cardColor = Theme.of(context).cardColor;
+    final textColor = Theme.of(context).colorScheme.onSurface;
+    
+    await showModalBottomSheet(
+      context: context,
+      backgroundColor: cardColor,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setModalState) => Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Belge Kategorisi', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: textColor)),
+              const SizedBox(height: 6),
+              Text('Uyum skoru için kategori ve belge tipini seçin.', style: TextStyle(fontSize: 12, color: Colors.grey.shade500)),
+              const SizedBox(height: 20),
+              Text('TIP', style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.grey.shade500, letterSpacing: 1.2)),
+              const SizedBox(height: 8),
+              Row(
+                children: _belgeTipleri.map((tip) {
+                  final isSelected = _selectedBelgeTipi == tip;
+                  final color = tip == 'gelir' ? Colors.green : Colors.red;
+                  return Expanded(
+                    child: GestureDetector(
+                      onTap: () => setModalState(() => _selectedBelgeTipi = tip),
+                      child: Container(
+                        margin: const EdgeInsets.only(right: 8),
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        decoration: BoxDecoration(
+                          color: isSelected ? color.withOpacity(0.15) : (isDark ? const Color(0xFF0F172A) : const Color(0xFFF8FAFC)),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: isSelected ? color : Colors.transparent, width: 2),
+                        ),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(tip == 'gelir' ? Icons.trending_up_rounded : Icons.trending_down_rounded, color: isSelected ? color : Colors.grey, size: 18),
+                            const SizedBox(width: 6),
+                            Text(tip == 'gelir' ? 'GELİR' : 'GİDER', style: TextStyle(fontWeight: FontWeight.bold, color: isSelected ? color : Colors.grey, fontSize: 13)),
+                          ],
+                        ),
+                      ),
+                    ),
+                  );
+                }).toList(),
+              ),
+              const SizedBox(height: 20),
+              Text('KATEGORİ', style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.grey.shade500, letterSpacing: 1.2)),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: _categories.map((cat) {
+                  final isSelected = _selectedCategory == cat;
+                  return GestureDetector(
+                    onTap: () => setModalState(() => _selectedCategory = cat),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: isSelected ? primaryColor : (isDark ? const Color(0xFF0F172A) : const Color(0xFFF1F5F9)),
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: Text(cat, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: isSelected ? Colors.white : Colors.grey.shade600)),
+                    ),
+                  );
+                }).toList(),
+              ),
+              const SizedBox(height: 24),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: () async {
+                    Navigator.pop(ctx);
+                    setState(() {});
+                    if (widget.isViewMode && widget.documentData != null) {
+                      try {
+                        await Supabase.instance.client.from('documents').update({
+                          'category': _selectedCategory,
+                          'belge_tipi': _selectedBelgeTipi,
+                        }).eq('id', widget.documentData!['id']);
+                        if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Kategori güncellendi!')));
+                      } catch (e) {
+                        if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Hata: $e')));
+                      }
+                    }
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: primaryColor,
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                  child: const Text('Kaydet', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   Future<void> _showEditDialog(String title, String currentValue, Function(String) onSave) async {
@@ -166,7 +366,11 @@ class _DocumentDetailScreenState extends State<DocumentDetailScreen> {
       );
       if (picked != null) {
         String formatted = '${picked.day.toString().padLeft(2, '0')}.${picked.month.toString().padLeft(2, '0')}.${picked.year}';
-        onSave(formatted);
+        if (widget.isViewMode) {
+          _confirmAndUpdate('Tarih', formatted, onSave);
+        } else {
+          onSave(formatted);
+        }
       }
       return;
     }
@@ -228,9 +432,15 @@ class _DocumentDetailScreenState extends State<DocumentDetailScreen> {
                     text = '₺$text';
                   }
                 }
-                onSave(text);
+                Navigator.pop(ctx);
+                if (widget.isViewMode) {
+                  _confirmAndUpdate(title, text, onSave);
+                } else {
+                  onSave(text);
+                }
+              } else {
+                Navigator.pop(ctx);
               }
-              Navigator.pop(ctx);
             },
             style: ElevatedButton.styleFrom(
               backgroundColor: primaryColor,
@@ -510,6 +720,62 @@ class _DocumentDetailScreenState extends State<DocumentDetailScreen> {
                     ),
                   ],
                 ),
+                const SizedBox(height: 12),
+
+                // ─── KATEGORİ SEÇİCİ ────────────────────────────
+                GestureDetector(
+                  onTap: _showCategorySelector,
+                  child: Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: cardColor,
+                      borderRadius: BorderRadius.circular(20),
+                      boxShadow: [
+                        BoxShadow(color: Colors.black.withOpacity(0.02), blurRadius: 8, offset: const Offset(0, 2)),
+                      ],
+                    ),
+                    child: Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(10),
+                          decoration: BoxDecoration(
+                            color: primaryColor.withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Icon(Icons.category_outlined, color: primaryColor, size: 22),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text('KATEGORİ & TİP', style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.grey.shade500, letterSpacing: 1.0)),
+                              const SizedBox(height: 4),
+                              Row(
+                                children: [
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                    decoration: BoxDecoration(
+                                      color: (_selectedBelgeTipi == 'gelir' ? Colors.green : Colors.red).withOpacity(0.12),
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                    child: Text(
+                                      _selectedBelgeTipi == 'gelir' ? 'GELİR' : 'GİDER',
+                                      style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: _selectedBelgeTipi == 'gelir' ? Colors.green.shade700 : Colors.red.shade600),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 6),
+                                  Text(_selectedCategory, style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: textColor)),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
+                        Icon(Icons.chevron_right, color: Colors.grey.shade400),
+                      ],
+                    ),
+                  ),
+                ),
                 const SizedBox(height: 24),
 
                 // ─── OCR METNİ BAŞLIK ────────────────────────────
@@ -623,9 +889,9 @@ class _DocumentDetailScreenState extends State<DocumentDetailScreen> {
                   ),
                   elevation: 0,
                 ),
-                child: const Text(
-                  'Belgeyi Onayla',
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                child: Text(
+                  widget.isViewMode ? 'Geri Dön' : 'Belgeyi Onayla',
+                  style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                 ),
               ),
             ),
