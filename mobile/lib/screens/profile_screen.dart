@@ -6,6 +6,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:http/http.dart' as http;
 import 'login_screen.dart';
 import 'settings_screens.dart';
+import 'financial_settings_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -306,12 +307,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   Container(
                     padding: const EdgeInsets.all(8),
                     decoration: BoxDecoration(
-                      color: primaryColor.withOpacity(0.1),
+                      color: Colors.green.withOpacity(0.1),
                       borderRadius: BorderRadius.circular(10),
                     ),
                     child: Icon(
                       Icons.verified_user_outlined,
-                      color: primaryColor,
+                      color: Colors.green.shade600,
                       size: 20,
                     ),
                   ),
@@ -321,7 +322,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          'Doğrulanmış Hesap',
+                          'Hesap Durumu',
                           style: TextStyle(
                             fontWeight: FontWeight.bold,
                             fontSize: 14,
@@ -329,19 +330,26 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           ),
                         ),
                         Text(
-                          'Güvenlik seviyeniz: Seviye 3 (Yüksek)',
+                          _email.isNotEmpty ? '✔ E-posta doğrulandı: $_email' : 'Hesabınız aktif',
                           style: TextStyle(
                             fontSize: 11,
-                            color: Colors.grey.shade500,
+                            color: Colors.green.shade600,
                           ),
+                          overflow: TextOverflow.ellipsis,
                         ),
                       ],
                     ),
                   ),
-                  Icon(
-                    Icons.chevron_right,
-                    color: Colors.grey.shade400,
-                    size: 20,
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: Colors.green.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text(
+                      'AKTİF',
+                      style: TextStyle(fontSize: 10, color: Colors.green.shade700, fontWeight: FontWeight.bold),
+                    ),
                   ),
                 ],
               ),
@@ -362,10 +370,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const AccountSettingsScreen())),
                 ),
                 _MenuItem(
+                  icon: Icons.monetization_on_outlined,
+                  label: 'Finansal Ayarlar',
+                  onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const FinancialSettingsScreen())),
+                ),
+                _MenuItem(
                   icon: Icons.notifications_none,
                   label: 'Bildirimler',
                   onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const NotificationsScreen())),
-                  badge: '3',
                 ),
                 _MenuItem(
                   icon: Icons.security_outlined,

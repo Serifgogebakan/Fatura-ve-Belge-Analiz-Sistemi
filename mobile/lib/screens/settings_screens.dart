@@ -53,6 +53,28 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
   }
 
   Future<void> _saveProfile() async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: Theme.of(context).brightness == Brightness.dark ? const Color(0xFF1E293B) : Colors.white,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text('Değişiklikleri Kaydet', style: TextStyle(fontWeight: FontWeight.bold)),
+        content: const Text('Hesap bilgilerinizi güncellemek istediğinize emin misiniz?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('İptal', style: TextStyle(color: Colors.grey)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Evet, Kaydet', style: TextStyle(color: Color(0xFF0052FF), fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm != true) return;
+
     setState(() => _isSaving = true);
     try {
       final user = _supabase.auth.currentUser;
@@ -232,9 +254,14 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
 // ==========================================
 // GÜVENLİK EKRANI
 // ==========================================
-class SecurityScreen extends StatelessWidget {
+class SecurityScreen extends StatefulWidget {
   const SecurityScreen({super.key});
 
+  @override
+  State<SecurityScreen> createState() => _SecurityScreenState();
+}
+
+class _SecurityScreenState extends State<SecurityScreen> {
   Future<void> _resetPassword(BuildContext context) async {
     final supabase = Supabase.instance.client;
     final email = supabase.auth.currentUser?.email;
@@ -246,6 +273,69 @@ class SecurityScreen extends StatelessWidget {
             backgroundColor: Colors.green.shade600,
         ),
       );
+    }
+  }
+
+  Future<void> _changePassword() async {
+    final passwordController = TextEditingController();
+    
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: Theme.of(context).brightness == Brightness.dark ? const Color(0xFF1E293B) : Colors.white,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text('Şifre Değiştir', style: TextStyle(fontWeight: FontWeight.bold)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text('Yeni şifrenizi giriniz:'),
+            const SizedBox(height: 16),
+            TextField(
+              controller: passwordController,
+              obscureText: true,
+              decoration: InputDecoration(
+                labelText: 'Yeni Şifre',
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('İptal', style: TextStyle(color: Colors.grey)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Güncelle', style: TextStyle(color: Color(0xFF0052FF), fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm == true && passwordController.text.isNotEmpty) {
+      try {
+        await Supabase.instance.client.auth.updateUser(
+          UserAttributes(password: passwordController.text)
+        );
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: const Text('Şifreniz başarıyla güncellendi.'),
+              backgroundColor: Colors.green.shade600,
+            ),
+          );
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: const Text('Şifre güncellenirken bir hata oluştu.'),
+              backgroundColor: Colors.red.shade600,
+            ),
+          );
+        }
+      }
     }
   }
 
@@ -271,40 +361,34 @@ class SecurityScreen extends StatelessWidget {
               borderRadius: BorderRadius.circular(16),
               border: Border.all(color: isDark ? const Color(0xFF1E293B) : Colors.grey.shade100),
             ),
-            child: ListTile(
-              leading: Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(color: primaryColor.withOpacity(0.1), borderRadius: BorderRadius.circular(10)),
-                child: Icon(Icons.password_rounded, color: primaryColor, size: 20),
-              ),
-              title: const Text('Şifre Sıfırla', style: TextStyle(fontWeight: FontWeight.w600)),
-              subtitle: Text('Sistemde kayıtlı e-posta adresinize bağlantı yollar.', style: TextStyle(fontSize: 11, color: Colors.grey.shade500)),
-              trailing: Icon(Icons.chevron_right, color: Colors.grey.shade400),
-              onTap: () => _resetPassword(context),
+            child: Column(
+              children: [
+                ListTile(
+                  leading: Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(color: primaryColor.withOpacity(0.1), borderRadius: BorderRadius.circular(10)),
+                    child: Icon(Icons.lock_outline, color: primaryColor, size: 20),
+                  ),
+                  title: const Text('Şifre Değiştir', style: TextStyle(fontWeight: FontWeight.w600)),
+                  subtitle: Text('Hesabınızın şifresini hemen güncelleyin.', style: TextStyle(fontSize: 11, color: Colors.grey.shade500)),
+                  trailing: Icon(Icons.chevron_right, color: Colors.grey.shade400),
+                  onTap: _changePassword,
+                ),
+                Divider(height: 1, indent: 56, color: isDark ? const Color(0xFF1E293B) : Colors.grey.shade100),
+                ListTile(
+                  leading: Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(color: primaryColor.withOpacity(0.1), borderRadius: BorderRadius.circular(10)),
+                    child: Icon(Icons.mark_email_read_outlined, color: primaryColor, size: 20),
+                  ),
+                  title: const Text('Şifre Sıfırlama Bağlantısı', style: TextStyle(fontWeight: FontWeight.w600)),
+                  subtitle: Text('Sistemde kayıtlı e-posta adresinize bağlantı yollar.', style: TextStyle(fontSize: 11, color: Colors.grey.shade500)),
+                  trailing: Icon(Icons.chevron_right, color: Colors.grey.shade400),
+                  onTap: () => _resetPassword(context),
+                ),
+              ],
             ),
           ),
-          const SizedBox(height: 16),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            decoration: BoxDecoration(
-              color: cardColor,
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: isDark ? const Color(0xFF1E293B) : Colors.grey.shade100),
-            ),
-            child: SwitchListTile(
-              title: const Text('Biyometrik Giriş', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 15)),
-              subtitle: Text('Face ID / Touch ID ile giriş yapın', style: TextStyle(color: Colors.grey.shade500, fontSize: 12)),
-              value: true,
-              onChanged: (val) {},
-              activeColor: primaryColor,
-              contentPadding: EdgeInsets.zero,
-              secondary: Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(color: primaryColor.withOpacity(0.1), borderRadius: BorderRadius.circular(10)),
-                child: Icon(Icons.fingerprint, color: primaryColor, size: 20),
-              ),
-            ),
-          )
         ],
       ),
     );

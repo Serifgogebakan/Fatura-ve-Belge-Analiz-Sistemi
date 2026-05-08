@@ -6,6 +6,9 @@ import 'package:file_picker/file_picker.dart';
 import 'package:path/path.dart' as path_util;
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:http/http.dart' as http;
+import 'package:cunning_document_scanner/cunning_document_scanner.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:billmind/screens/document_detail_screen.dart';
 
 class UploadScreen extends StatefulWidget {
   const UploadScreen({super.key});
@@ -22,6 +25,7 @@ class _UploadScreenState extends State<UploadScreen> {
   double _uploadProgress = 0;
   double _storageUsedGB = 1.2;
   double _storageTotalGB = 5.0;
+  String _selectedBelgeTipi = 'gider'; // 'gelir' veya 'gider'
 
   List<Map<String, dynamic>> _recentUploads = [];
 
@@ -49,14 +53,29 @@ class _UploadScreenState extends State<UploadScreen> {
     } catch (_) {}
   }
 
-  // ─── Kamera ile çek ────────────────────────────────────────────────
+  // ─── Kamera ile çek (Akıllı Tarama) ────────────────────────────────
   Future<void> _pickFromCamera() async {
-    final XFile? image = await _picker.pickImage(
-      source: ImageSource.camera,
-      imageQuality: 85,
-    );
-    if (image != null && mounted) {
-      await _uploadFile(File(image.path), 'image/jpeg');
+    try {
+      final List<String> pictures =
+          await CunningDocumentScanner.getPictures() ?? [];
+
+      if (pictures.isNotEmpty && mounted) {
+        // İlk taranan sayfayı detay ekranına gönderelim
+        final File file = File(pictures.first);
+        final result = await Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => DocumentDetailScreen(imageFile: file),
+          ),
+        );
+        if (result != null && result is Map<String, dynamic> && mounted) {
+          await _uploadFile(file, 'image/jpeg', parsedData: result);
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        _showError('Belge tarayıcı başlatılamadı: ${e.toString()}');
+      }
     }
   }
 
@@ -67,7 +86,16 @@ class _UploadScreenState extends State<UploadScreen> {
       imageQuality: 85,
     );
     if (image != null && mounted) {
-      await _uploadFile(File(image.path), 'image/jpeg');
+      final result = await Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) =>
+              DocumentDetailScreen(imageFile: File(image.path)),
+        ),
+      );
+      if (result != null && result is Map<String, dynamic> && mounted) {
+        await _uploadFile(File(image.path), 'image/jpeg', parsedData: result);
+      }
     }
   }
 
@@ -79,14 +107,29 @@ class _UploadScreenState extends State<UploadScreen> {
     );
     if (result != null && result.files.single.path != null && mounted) {
       final file = File(result.files.single.path!);
-      final ext = result.files.single.extension ?? 'pdf';
-      final mime = ext == 'pdf' ? 'application/pdf' : 'image/$ext';
-      await _uploadFile(file, mime);
+      final navResult = await Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => DocumentDetailScreen(
+            imageFile: file,
+            documentName: result.files.single.name,
+          ),
+        ),
+      );
+      if (navResult != null && navResult is Map<String, dynamic> && mounted) {
+        final ext = result.files.single.extension ?? 'pdf';
+        final mime = ext == 'pdf' ? 'application/pdf' : 'image/$ext';
+        await _uploadFile(file, mime, parsedData: navResult);
+      }
     }
   }
 
   // ─── Supabase'e yükle ──────────────────────────────────────────────
-  Future<void> _uploadFile(File file, String mimeType) async {
+  Future<void> _uploadFile(
+    File file,
+    String mimeType, {
+    Map<String, dynamic>? parsedData,
+  }) async {
     final userId = _supabase.auth.currentUser?.id;
     if (userId == null) return;
 
@@ -107,53 +150,109 @@ class _UploadScreenState extends State<UploadScreen> {
       }
 
       // Cloudinary upload
-      const cloudName = 'dpa1qez0u';
-      final url = Uri.parse('https://api.cloudinary.com/v1_1/$cloudName/auto/upload');
+      final cloudName = dotenv.env['CLOUDINARY_CLOUD_NAME']!;
+      final preset = dotenv.env['CLOUDINARY_UPLOAD_PRESET']!;
+      final url = Uri.parse(
+        'https://api.cloudinary.com/v1_1/$cloudName/auto/upload',
+      );
 
       final request = http.MultipartRequest('POST', url)
-        // Web'de unsigned/signed duruma göre preset farklı olabilir, 
-        // Deneme preset'i "billmind_docs" olarak test edelim
-        // Eğer hata verirse (ör. preset bulunamadı) backend imzalaması yapılması gerekecektir.
-        ..fields['upload_preset'] = 'billmind_docs'
-        ..files.add(http.MultipartFile.fromBytes(
-          'file',
-          fileBytes,
-          filename: path_util.basename(file.path),
-        ));
+        ..fields['upload_preset'] = preset
+        ..files.add(
+          http.MultipartFile.fromBytes(
+            'file',
+            fileBytes,
+            filename: path_util.basename(file.path),
+          ),
+        );
 
       final response = await request.send();
       final resBody = await response.stream.bytesToString();
-      
-      if (response.statusCode == 200) {
-        final data = jsonDecode(resBody);
-        final publicUrl = data['secure_url'] as String;
-        
-        if (mounted) setState(() => _uploadProgress = 0.8);
 
-        // DB'ye kaydet
-        final title = path_util.basenameWithoutExtension(file.path);
-        await _supabase.from('documents').insert({
-          'user_id': userId,
-          'name': title,
-          'original_filename': path_util.basename(file.path),
-          'cloudinary_secure_url': publicUrl,
-          'file_type': mimeType.contains('pdf') ? 'pdf' : 'image',
-          'category': 'DİĞER',
-          'status': 'uploaded',
-          'payment_status': 'beklemede',
-          'amount': null,
+      if (response.statusCode != 200) {
+        throw Exception(
+          'Cloudinary upload hatası: ${response.statusCode} - $resBody',
+        );
+      }
+
+      final data = jsonDecode(resBody);
+      final publicUrl = data['secure_url'] as String;
+
+      if (mounted) setState(() => _uploadProgress = 0.8);
+
+      // Tutar parse etme (örn: ₺12.450,00 -> 12450.00)
+      double? parsedAmount;
+      if (parsedData != null && parsedData['tutar'] != null) {
+        String t = parsedData['tutar']
+            .toString()
+            .replaceAll('₺', '')
+            .replaceAll('.', '')
+            .replaceAll(',', '.')
+            .trim();
+        parsedAmount = double.tryParse(t);
+      }
+
+      // Tarihi YYYY-MM-DD formatına çevirme (örn: 06.06.2026)
+      String? isoDate;
+      if (parsedData != null && parsedData['tarih'] != null && parsedData['tarih'] != 'Bulunamadı') {
+        try {
+          final parts = parsedData['tarih'].toString().split(RegExp(r'[./-]'));
+          if (parts.length == 3) {
+            String year = parts[2].length == 2 ? '20${parts[2]}' : parts[2];
+            String month = parts[1].padLeft(2, '0');
+            String day = parts[0].padLeft(2, '0');
+            isoDate = '$year-$month-$day';
+          }
+        } catch (_) {}
+      }
+
+      // DB'ye kaydet (Önce documents tablosuna)
+      final title = parsedData != null && parsedData['firmaAdi'] != 'Bulunamadı'
+          ? parsedData['firmaAdi']
+          : path_util.basenameWithoutExtension(file.path);
+
+      final docResponse = await _supabase
+          .from('documents')
+          .insert({
+            'user_id': userId,
+            'name': title,
+            'original_filename': path_util.basename(file.path),
+            'cloudinary_secure_url': publicUrl,
+            'file_type': mimeType.contains('pdf') ? 'pdf' : 'image',
+            'category': 'DİĞER',
+            'status': 'beklemede',
+            'payment_status': 'beklemede',
+            'amount': parsedAmount,
+            'belge_tipi': _selectedBelgeTipi, // YENI: gelir/gider tipi
+            if (isoDate != null) 'created_at': '${isoDate}T12:00:00Z',
+          })
+          .select()
+          .single();
+
+      final documentId = docResponse['id'];
+
+      // Eğer OCR verisi varsa extracted_data tablosuna kaydet
+      if (parsedData != null) {
+        await _supabase.from('extracted_data').insert({
+          'document_id': documentId,
+          'vendor_name': parsedData['firmaAdi'] == 'Bulunamadı'
+              ? null
+              : parsedData['firmaAdi'],
+          'invoice_date': isoDate,
+          'total_amount': parsedAmount,
+          'raw_text': parsedData['ocrMetni'],
+          'processing_model':
+              'google-mlkit-flutter', // Hangi modelin işlediği bilinsin
         });
+      }
 
-        if (mounted) {
-          setState(() {
-            _uploadProgress = 1.0;
-            _isUploading = false;
-          });
-          _showSuccess('Belge başarıyla yüklendi!');
-          _loadRecentUploads();
-        }
-      } else {
-        throw Exception('Cloudinary upload hatası: ${response.statusCode}');
+      if (mounted) {
+        setState(() {
+          _uploadProgress = 1.0;
+          _isUploading = false;
+        });
+        _showSuccess('Belge başarıyla yüklendi!');
+        _loadRecentUploads();
       }
     } catch (e) {
       if (mounted) {
@@ -166,11 +265,13 @@ class _UploadScreenState extends State<UploadScreen> {
   void _showSuccess(String msg) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Row(children: [
-          const Icon(Icons.check_circle, color: Colors.white),
-          const SizedBox(width: 8),
-          Expanded(child: Text(msg)),
-        ]),
+        content: Row(
+          children: [
+            const Icon(Icons.check_circle, color: Colors.white),
+            const SizedBox(width: 8),
+            Expanded(child: Text(msg)),
+          ],
+        ),
         backgroundColor: Colors.green.shade600,
         behavior: SnackBarBehavior.floating,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -181,11 +282,13 @@ class _UploadScreenState extends State<UploadScreen> {
   void _showError(String msg) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Row(children: [
-          const Icon(Icons.error_outline, color: Colors.white),
-          const SizedBox(width: 8),
-          Expanded(child: Text(msg)),
-        ]),
+        content: Row(
+          children: [
+            const Icon(Icons.error_outline, color: Colors.white),
+            const SizedBox(width: 8),
+            Expanded(child: Text(msg)),
+          ],
+        ),
         backgroundColor: Colors.red.shade600,
         behavior: SnackBarBehavior.floating,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -196,8 +299,9 @@ class _UploadScreenState extends State<UploadScreen> {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final primaryColor =
-        isDark ? const Color(0xFF3B82F6) : const Color(0xFF1D4ED8);
+    final primaryColor = isDark
+        ? const Color(0xFF3B82F6)
+        : const Color(0xFF1D4ED8);
     final cardColor = Theme.of(context).cardColor;
     final textColor = Theme.of(context).colorScheme.onSurface;
     final progress = _storageUsedGB / _storageTotalGB;
@@ -207,14 +311,21 @@ class _UploadScreenState extends State<UploadScreen> {
         title: Text(
           'Belge Yükle',
           style: TextStyle(
-              fontWeight: FontWeight.bold, color: textColor, fontSize: 18),
+            fontWeight: FontWeight.bold,
+            color: textColor,
+            fontSize: 18,
+          ),
         ),
         backgroundColor: Colors.transparent,
         elevation: 0,
         centerTitle: true,
         // ✅ Geri tuşu - otomatik olarak Navigator.pop yapar
         leading: IconButton(
-          icon: Icon(Icons.arrow_back_ios_new_rounded, color: textColor, size: 20),
+          icon: Icon(
+            Icons.arrow_back_ios_new_rounded,
+            color: textColor,
+            size: 20,
+          ),
           onPressed: () => Navigator.of(context).pop(),
         ),
       ),
@@ -229,9 +340,10 @@ class _UploadScreenState extends State<UploadScreen> {
                 Text(
                   'Belge Yükle',
                   style: TextStyle(
-                      fontSize: 26,
-                      fontWeight: FontWeight.bold,
-                      color: textColor),
+                    fontSize: 26,
+                    fontWeight: FontWeight.bold,
+                    color: textColor,
+                  ),
                 ),
                 const SizedBox(height: 6),
                 Text(
@@ -241,7 +353,75 @@ class _UploadScreenState extends State<UploadScreen> {
                 ),
                 const SizedBox(height: 28),
 
-                // ─── KAMERA BUTONU ────────────────────────────────────────
+                // ─── BELGE TİPİ SEÇİMİ ─────────────────────────────────────────
+                Row(
+                  children: [
+                    Expanded(
+                      child: GestureDetector(
+                        onTap: () => setState(() => _selectedBelgeTipi = 'gider'),
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 200),
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          decoration: BoxDecoration(
+                            color: _selectedBelgeTipi == 'gider' ? Colors.red.shade600 : cardColor,
+                            borderRadius: BorderRadius.circular(14),
+                            border: Border.all(
+                              color: _selectedBelgeTipi == 'gider' ? Colors.red.shade600 : Colors.grey.shade300,
+                            ),
+                          ),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(Icons.arrow_upward_rounded,
+                                size: 18,
+                                color: _selectedBelgeTipi == 'gider' ? Colors.white : Colors.grey.shade500),
+                              const SizedBox(width: 6),
+                              Text('GİDER', style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 13,
+                                color: _selectedBelgeTipi == 'gider' ? Colors.white : Colors.grey.shade500,
+                              )),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: GestureDetector(
+                        onTap: () => setState(() => _selectedBelgeTipi = 'gelir'),
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 200),
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          decoration: BoxDecoration(
+                            color: _selectedBelgeTipi == 'gelir' ? Colors.green.shade600 : cardColor,
+                            borderRadius: BorderRadius.circular(14),
+                            border: Border.all(
+                              color: _selectedBelgeTipi == 'gelir' ? Colors.green.shade600 : Colors.grey.shade300,
+                            ),
+                          ),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(Icons.arrow_downward_rounded,
+                                size: 18,
+                                color: _selectedBelgeTipi == 'gelir' ? Colors.white : Colors.grey.shade500),
+                              const SizedBox(width: 6),
+                              Text('GELİR', style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 13,
+                                color: _selectedBelgeTipi == 'gelir' ? Colors.white : Colors.grey.shade500,
+                              )),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 20),
+
+                // ─── KAMERA BUTONU ─────────────────────────────────────────
                 GestureDetector(
                   onTap: _isUploading ? null : _pickFromCamera,
                   child: Container(
@@ -253,7 +433,7 @@ class _UploadScreenState extends State<UploadScreen> {
                           primaryColor,
                           isDark
                               ? const Color(0xFF1E3A8A)
-                              : const Color(0xFF2563EB)
+                              : const Color(0xFF2563EB),
                         ],
                         begin: Alignment.topLeft,
                         end: Alignment.bottomRight,
@@ -276,12 +456,15 @@ class _UploadScreenState extends State<UploadScreen> {
                             color: Colors.white.withOpacity(0.2),
                             shape: BoxShape.circle,
                           ),
-                          child: const Icon(Icons.camera_alt,
-                              color: Colors.white, size: 32),
+                          child: const Icon(
+                            Icons.camera_alt,
+                            color: Colors.white,
+                            size: 32,
+                          ),
                         ),
                         const SizedBox(height: 12),
                         const Text(
-                          'Kamera ile Çek',
+                          'Belge Tara',
                           style: TextStyle(
                             color: Colors.white,
                             fontSize: 16,
@@ -292,8 +475,9 @@ class _UploadScreenState extends State<UploadScreen> {
                         Text(
                           'Fatura veya fişinizi fotoğraflayın',
                           style: TextStyle(
-                              color: Colors.white.withOpacity(0.8),
-                              fontSize: 12),
+                            color: Colors.white.withOpacity(0.8),
+                            fontSize: 12,
+                          ),
                         ),
                       ],
                     ),
@@ -314,15 +498,19 @@ class _UploadScreenState extends State<UploadScreen> {
                             color: cardColor,
                             borderRadius: BorderRadius.circular(18),
                             border: Border.all(
-                                color: isDark
-                                    ? const Color(0xFF1E293B)
-                                    : Colors.grey.shade200),
+                              color: isDark
+                                  ? const Color(0xFF1E293B)
+                                  : Colors.grey.shade200,
+                            ),
                           ),
                           child: Column(
                             mainAxisAlignment: MainAxisAlignment.center,
                             children: [
-                              Icon(Icons.grid_view_rounded,
-                                  color: primaryColor, size: 28),
+                              Icon(
+                                Icons.grid_view_rounded,
+                                color: primaryColor,
+                                size: 28,
+                              ),
                               const SizedBox(height: 6),
                               Text(
                                 'GALERİDEN YÜKLE',
@@ -348,9 +536,10 @@ class _UploadScreenState extends State<UploadScreen> {
                           color: cardColor,
                           borderRadius: BorderRadius.circular(18),
                           border: Border.all(
-                              color: isDark
-                                  ? const Color(0xFF1E293B)
-                                  : Colors.grey.shade200),
+                            color: isDark
+                                ? const Color(0xFF1E293B)
+                                : Colors.grey.shade200,
+                          ),
                         ),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
@@ -359,24 +548,32 @@ class _UploadScreenState extends State<UploadScreen> {
                             Row(
                               mainAxisAlignment: MainAxisAlignment.spaceBetween,
                               children: [
-                                Text('DEPOLAMA',
-                                    style: TextStyle(
-                                        fontSize: 9,
-                                        fontWeight: FontWeight.bold,
-                                        color: Colors.grey.shade500,
-                                        letterSpacing: 0.5)),
+                                Text(
+                                  'DEPOLAMA',
+                                  style: TextStyle(
+                                    fontSize: 9,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.grey.shade500,
+                                    letterSpacing: 0.5,
+                                  ),
+                                ),
                                 Container(
                                   padding: const EdgeInsets.symmetric(
-                                      horizontal: 6, vertical: 2),
+                                    horizontal: 6,
+                                    vertical: 2,
+                                  ),
                                   decoration: BoxDecoration(
                                     color: Colors.green.withOpacity(0.15),
                                     borderRadius: BorderRadius.circular(6),
                                   ),
-                                  child: Text('AKTİF',
-                                      style: TextStyle(
-                                          fontSize: 8,
-                                          fontWeight: FontWeight.bold,
-                                          color: Colors.green.shade500)),
+                                  child: Text(
+                                    'AKTİF',
+                                    style: TextStyle(
+                                      fontSize: 8,
+                                      fontWeight: FontWeight.bold,
+                                      color: Colors.green.shade500,
+                                    ),
+                                  ),
                                 ),
                               ],
                             ),
@@ -384,9 +581,10 @@ class _UploadScreenState extends State<UploadScreen> {
                             Text(
                               '${_storageUsedGB.toStringAsFixed(1)} GB / ${_storageTotalGB.toStringAsFixed(1)} GB',
                               style: TextStyle(
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.bold,
-                                  color: textColor),
+                                fontSize: 12,
+                                fontWeight: FontWeight.bold,
+                                color: textColor,
+                              ),
                             ),
                             const SizedBox(height: 6),
                             ClipRRect(
@@ -397,8 +595,9 @@ class _UploadScreenState extends State<UploadScreen> {
                                 backgroundColor: isDark
                                     ? const Color(0xFF334155)
                                     : Colors.grey.shade200,
-                                valueColor:
-                                    AlwaysStoppedAnimation<Color>(primaryColor),
+                                valueColor: AlwaysStoppedAnimation<Color>(
+                                  primaryColor,
+                                ),
                               ),
                             ),
                           ],
@@ -427,24 +626,31 @@ class _UploadScreenState extends State<UploadScreen> {
                     ),
                     child: Column(
                       children: [
-                        Icon(Icons.insert_drive_file_outlined,
-                            color: Colors.grey.shade400, size: 40),
+                        Icon(
+                          Icons.insert_drive_file_outlined,
+                          color: Colors.grey.shade400,
+                          size: 40,
+                        ),
                         const SizedBox(height: 12),
                         RichText(
                           textAlign: TextAlign.center,
                           text: TextSpan(
                             style: TextStyle(
-                                fontSize: 13, color: Colors.grey.shade500),
+                              fontSize: 13,
+                              color: Colors.grey.shade500,
+                            ),
                             children: [
                               const TextSpan(
-                                  text: 'Dosyayı buraya sürükleyin\nveya '),
+                                text: 'Dosyayı buraya sürükleyin\nveya ',
+                              ),
                               TextSpan(
                                 text: 'buraya tıklayın',
                                 style: TextStyle(
-                                    color: isDark
-                                        ? Colors.blue.shade400
-                                        : Colors.blue.shade600,
-                                    fontWeight: FontWeight.bold),
+                                  color: isDark
+                                      ? Colors.blue.shade400
+                                      : Colors.blue.shade600,
+                                  fontWeight: FontWeight.bold,
+                                ),
                               ),
                             ],
                           ),
@@ -453,9 +659,10 @@ class _UploadScreenState extends State<UploadScreen> {
                         Text(
                           'MAKSİMUM 20MB (PDF, JPG, PNG)',
                           style: TextStyle(
-                              fontSize: 9,
-                              color: Colors.grey.shade400,
-                              letterSpacing: 0.5),
+                            fontSize: 9,
+                            color: Colors.grey.shade400,
+                            letterSpacing: 0.5,
+                          ),
                         ),
                       ],
                     ),
@@ -470,17 +677,17 @@ class _UploadScreenState extends State<UploadScreen> {
                     child: Text(
                       'SON YÜKLEMELER',
                       style: TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.grey.shade500,
-                          letterSpacing: 1.2),
+                        fontSize: 11,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.grey.shade500,
+                        letterSpacing: 1.2,
+                      ),
                     ),
                   ),
                   const SizedBox(height: 12),
                   ..._recentUploads.map((upload) {
                     final title = (upload['name'] as String?) ?? 'Belge';
-                    final type =
-                        (upload['file_type'] as String?) ?? 'Dosya';
+                    final type = (upload['file_type'] as String?) ?? 'Dosya';
                     final createdAt = (upload['created_at'] as String?) ?? '';
                     String dateStr = '-';
                     if (createdAt.isNotEmpty) {
@@ -497,9 +704,10 @@ class _UploadScreenState extends State<UploadScreen> {
                         color: cardColor,
                         borderRadius: BorderRadius.circular(16),
                         border: Border.all(
-                            color: isDark
-                                ? const Color(0xFF1E293B)
-                                : Colors.grey.shade100),
+                          color: isDark
+                              ? const Color(0xFF1E293B)
+                              : Colors.grey.shade100,
+                        ),
                       ),
                       child: Row(
                         children: [
@@ -527,22 +735,29 @@ class _UploadScreenState extends State<UploadScreen> {
                                   style: TextStyle(
                                     fontSize: 13,
                                     fontWeight: FontWeight.w600,
-                                    color:
-                                        isDark ? Colors.white : Colors.black87,
+                                    color: isDark
+                                        ? Colors.white
+                                        : Colors.black87,
                                   ),
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
                                 ),
                                 const SizedBox(height: 2),
-                                Text(dateStr,
-                                    style: TextStyle(
-                                        fontSize: 11,
-                                        color: Colors.grey.shade500)),
+                                Text(
+                                  dateStr,
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    color: Colors.grey.shade500,
+                                  ),
+                                ),
                               ],
                             ),
                           ),
-                          Icon(Icons.check_circle,
-                              color: Colors.green.shade400, size: 18),
+                          Icon(
+                            Icons.check_circle,
+                            color: Colors.green.shade400,
+                            size: 18,
+                          ),
                         ],
                       ),
                     );
@@ -573,19 +788,24 @@ class _UploadScreenState extends State<UploadScreen> {
                           value: _uploadProgress,
                           strokeWidth: 5,
                           backgroundColor: Colors.grey.shade300,
-                          valueColor:
-                              AlwaysStoppedAnimation<Color>(primaryColor),
+                          valueColor: AlwaysStoppedAnimation<Color>(
+                            primaryColor,
+                          ),
                         ),
                       ),
                       const SizedBox(height: 16),
                       Text(
                         'Yükleniyor... %${(_uploadProgress * 100).toStringAsFixed(0)}',
                         style: TextStyle(
-                            fontWeight: FontWeight.bold, color: textColor),
+                          fontWeight: FontWeight.bold,
+                          color: textColor,
+                        ),
                       ),
                       const SizedBox(height: 6),
-                      Text('Lütfen bekleyin',
-                          style: TextStyle(color: Colors.grey.shade500)),
+                      Text(
+                        'Lütfen bekleyin',
+                        style: TextStyle(color: Colors.grey.shade500),
+                      ),
                     ],
                   ),
                 ),

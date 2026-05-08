@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'screens/documents_screen.dart';
 import 'screens/reports_screen.dart';
 import 'screens/profile_screen.dart';
@@ -19,6 +20,13 @@ class _HomePageState extends State<HomePage> {
   final _supabase = Supabase.instance.client;
   bool _isLoading = true;
   double _totalSpending = 0;
+  String _monthlyComparison = '%0 değişim';
+  bool _isIncrease = true;
+  List<double> _weeklySpendings = List.filled(7, 0.0);
+  List<double> _monthlySpendings = List.filled(12, 0.0);
+  double _maxWeeklySpending = 100.0;
+  double _maxMonthlySpending = 100.0;
+  bool _showMonthly = false;
   List<Map<String, dynamic>> _recentDocs = [];
 
   @override
@@ -27,30 +35,111 @@ class _HomePageState extends State<HomePage> {
     _loadDashboardData();
   }
 
+  double _ciroHedefi = 1000000; // Varsayılan 1M
+  double _bekleyenFaturaTutari = 0;
+  int _gecikmisFaturaSayisi = 0;
+
   Future<void> _loadDashboardData() async {
     setState(() => _isLoading = true);
     try {
+      final prefs = await SharedPreferences.getInstance();
+      _ciroHedefi = prefs.getDouble('ciroHedefi') ?? 1000000.0;
+
       final userId = _supabase.auth.currentUser?.id;
       if (userId == null) return;
 
       // Toplam harcama
       final docsResponse = await _supabase
           .from('documents')
-          .select('amount, payment_status, name, file_type, created_at')
+          .select('amount, payment_status, name, file_type, created_at, belge_tipi')
           .eq('user_id', userId)
           .order('created_at', ascending: false);
 
       double total = 0;
+      double thisMonthTotal = 0;
+      double lastMonthTotal = 0;
+      double pendingTotal = 0;
+      int overdueCount = 0;
+      List<double> weekly = List.filled(7, 0.0);
+      List<double> monthly = List.filled(12, 0.0);
+      final now = DateTime.now();
+      final currentYear = now.year;
+      
+      final firstDayOfThisMonth = DateTime(now.year, now.month, 1);
+      final firstDayOfLastMonth = DateTime(now.month == 1 ? now.year - 1 : now.year, now.month == 1 ? 12 : now.month - 1, 1);
+
       for (final doc in docsResponse) {
         final amount = (doc['amount'] as num?)?.toDouble() ?? 0;
-        total += amount;
+        final status = doc['payment_status'] as String?;
+        final belgeTipi = (doc['belge_tipi'] as String?) ?? 'gider';
+        final createdAtStr = doc['created_at'] as String?;
+
+        if (createdAtStr != null) {
+          try {
+            final dt = DateTime.parse(createdAtStr).toLocal();
+
+            // Kurumsal Nakit Akışı: SADECE BU YIL
+            if (dt.year == currentYear && belgeTipi != 'gelir') {
+              total += amount;
+            }
+
+            if (belgeTipi != 'gelir') {
+              if (dt.isAfter(firstDayOfThisMonth) || dt.isAtSameMomentAs(firstDayOfThisMonth)) {
+                thisMonthTotal += amount;
+              } else if (dt.isAfter(firstDayOfLastMonth) || dt.isAtSameMomentAs(firstDayOfLastMonth)) {
+                lastMonthTotal += amount;
+              }
+
+              // Haftalık
+              final diff = now.difference(dt).inDays;
+              if (diff >= 0 && diff <= 7) {
+                weekly[dt.weekday - 1] += amount;
+              }
+
+              // Aylık (bu yıl)
+              if (dt.year == currentYear) {
+                monthly[dt.month - 1] += amount;
+              }
+            }
+          } catch (_) {}
+        }
+
+        if (status != null && status.toLowerCase() == 'bekliyor' && belgeTipi != 'gelir') {
+          pendingTotal += amount;
+          overdueCount++;
+        }
       }
 
-      // Son 3 belge
+      String comparisonStr = '%0 değişim';
+      bool increase = true;
+      if (lastMonthTotal > 0) {
+        double change = ((thisMonthTotal - lastMonthTotal) / lastMonthTotal) * 100;
+        increase = change >= 0;
+        comparisonStr = 'Geçen aya göre %${change.abs().toStringAsFixed(1)} ${increase ? 'artış' : 'düşüş'}';
+      } else if (thisMonthTotal > 0) {
+        comparisonStr = 'Geçen aya göre %100 artış';
+      }
+
+      double maxWeekly = 10;
+      for (double val in weekly) { if (val > maxWeekly) maxWeekly = val; }
+      maxWeekly *= 1.2;
+
+      double maxMonthly = 10;
+      for (double val in monthly) { if (val > maxMonthly) maxMonthly = val; }
+      maxMonthly *= 1.2;
+
       final recent = docsResponse.take(3).toList();
 
       setState(() {
         _totalSpending = total;
+        _bekleyenFaturaTutari = pendingTotal;
+        _gecikmisFaturaSayisi = overdueCount;
+        _monthlyComparison = comparisonStr;
+        _isIncrease = increase;
+        _weeklySpendings = weekly;
+        _monthlySpendings = monthly;
+        _maxWeeklySpending = maxWeekly;
+        _maxMonthlySpending = maxMonthly;
         _recentDocs = List<Map<String, dynamic>>.from(recent);
         _isLoading = false;
       });
@@ -223,22 +312,16 @@ class _HomePageState extends State<HomePage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // TOPLAM HARCAMA KARTI
+            // KURUMSAL NAKİT AKIŞI KARTI
             Container(
               width: double.infinity,
-              padding: const EdgeInsets.all(20),
+              padding: const EdgeInsets.all(24),
               decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  colors: isDark
-                      ? [const Color(0xFF3B82F6), const Color(0xFF1E3A8A)]
-                      : [const Color(0xFF2563EB), const Color(0xFF1D4ED8)],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                ),
-                borderRadius: BorderRadius.circular(20),
+                color: const Color(0xFF0052FF), // Resimdeki tam mavi
+                borderRadius: BorderRadius.circular(24),
                 boxShadow: [
                   BoxShadow(
-                    color: primaryColor.withOpacity(0.35),
+                    color: const Color(0xFF0052FF).withOpacity(0.35),
                     blurRadius: 20,
                     offset: const Offset(0, 8),
                   ),
@@ -249,71 +332,150 @@ class _HomePageState extends State<HomePage> {
                 children: [
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        'TOPLAM HARCAMA',
-                        style: TextStyle(
-                          color: Colors.white.withOpacity(0.85),
-                          fontSize: 11,
-                          fontWeight: FontWeight.w700,
-                          letterSpacing: 1.4,
-                        ),
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'KURUMSAL NAKİT AKIŞI',
+                            style: TextStyle(
+                              color: Colors.white.withOpacity(0.85),
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                              letterSpacing: 1.0,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          _isLoading
+                              ? const SizedBox(
+                                  height: 42,
+                                  child: Center(
+                                    child: SizedBox(
+                                      width: 20,
+                                      height: 20,
+                                      child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+                                    ),
+                                  ),
+                                )
+                              : Text(
+                                  '₺${_formatAmount(_totalSpending)}',
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 32,
+                                    fontWeight: FontWeight.w900,
+                                    letterSpacing: -1.0,
+                                  ),
+                                ),
+                        ],
                       ),
                       Container(
-                        padding: const EdgeInsets.all(6),
+                        padding: const EdgeInsets.all(10),
                         decoration: BoxDecoration(
                           color: Colors.white.withOpacity(0.2),
-                          borderRadius: BorderRadius.circular(8),
+                          borderRadius: BorderRadius.circular(12),
                         ),
                         child: const Icon(
-                          Icons.account_balance_wallet,
+                          Icons.account_balance,
                           color: Colors.white,
-                          size: 16,
+                          size: 24,
                         ),
                       ),
                     ],
                   ),
-                  const SizedBox(height: 10),
-                  _isLoading
-                      ? const SizedBox(
-                          height: 36,
-                          child: Center(
-                            child: SizedBox(
-                              width: 20,
-                              height: 20,
-                              child: CircularProgressIndicator(
-                                color: Colors.white,
-                                strokeWidth: 2,
-                              ),
-                            ),
-                          ),
-                        )
-                      : Text(
-                          '₺${_formatAmount(_totalSpending)}',
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 30,
-                            fontWeight: FontWeight.bold,
-                            letterSpacing: -0.5,
-                          ),
-                        ),
-                  const SizedBox(height: 8),
+                  const SizedBox(height: 32),
                   Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      const Icon(
-                        Icons.trending_up,
-                        color: Colors.white,
-                        size: 14,
+                      const Text(
+                        'Yıllık Ciro Hedefi',
+                        style: TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold),
                       ),
-                      const SizedBox(width: 4),
                       Text(
-                        'Geçen aya göre %12 artış',
-                        style: TextStyle(
-                          color: Colors.white.withOpacity(0.9),
-                          fontSize: 12,
-                        ),
+                        '${((_totalSpending / _ciroHedefi) * 100).toInt()}%',
+                        style: TextStyle(color: Colors.white.withOpacity(0.9), fontSize: 13, fontWeight: FontWeight.bold),
                       ),
                     ],
+                  ),
+                  const SizedBox(height: 10),
+                  Container(
+                    height: 8,
+                    width: double.infinity,
+                    decoration: BoxDecoration(
+                      color: Colors.white.withOpacity(0.2),
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          flex: ((_totalSpending / _ciroHedefi) * 100).toInt().clamp(0, 100),
+                          child: Container(
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                          ),
+                        ),
+                        Expanded(
+                          flex: (100 - ((_totalSpending / _ciroHedefi) * 100).toInt()).clamp(0, 100),
+                          child: const SizedBox(),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    'Hedeflenen ciroya ulaşmak için ₺${_formatAmount((_ciroHedefi - _totalSpending).clamp(0, double.infinity))} daha\ngerekli.',
+                    style: TextStyle(
+                      color: Colors.white.withOpacity(0.85),
+                      fontSize: 12,
+                      height: 1.4,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 32),
+
+            // İŞLETME METRİKLERİ
+            Text(
+              'İşletme Metrikleri',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+                color: textColor,
+              ),
+            ),
+            const SizedBox(height: 16),
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              clipBehavior: Clip.none,
+              child: Row(
+                children: [
+                  _buildMetricCard(
+                    title: 'Bekleyen Faturalar',
+                    amount: '₺${_formatAmount(_bekleyenFaturaTutari)}',
+                    footerText: '$_gecikmisFaturaSayisi Gecikmiş',
+                    footerIcon: Icons.warning_amber_rounded,
+                    footerColor: _gecikmisFaturaSayisi > 0 ? Colors.red : Colors.green,
+                    icon: Icons.assignment_outlined,
+                    iconBg: Colors.blue.withOpacity(0.1),
+                    iconColor: Colors.blue,
+                    cardColor: cardColor,
+                    textColor: textColor,
+                  ),
+                  const SizedBox(width: 16),
+                  _buildMetricCard(
+                    title: 'Vergi Yükü (Tahmini)',
+                    amount: '₺${_formatAmount(_totalSpending * 0.20)}', // %20 KDV tahmini
+                    footerText: 'Son Tarih: 24 May',
+                    footerIcon: Icons.calendar_today_outlined,
+                    footerColor: Colors.grey.shade600,
+                    icon: Icons.account_balance_wallet_outlined,
+                    iconBg: Colors.red.withOpacity(0.1),
+                    iconColor: Colors.red,
+                    cardColor: cardColor,
+                    textColor: textColor,
                   ),
                 ],
               ),
@@ -324,29 +486,18 @@ class _HomePageState extends State<HomePage> {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text(
-                  'Harcama Analizi',
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                    color: textColor,
-                  ),
-                ),
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 10,
-                    vertical: 4,
-                  ),
-                  decoration: BoxDecoration(
-                    color: primaryColor.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Text(
-                    'AYLIK GÖRÜNÜM',
-                    style: TextStyle(
-                      fontSize: 10,
-                      fontWeight: FontWeight.bold,
-                      color: primaryColor,
+                Text('Harcama Analizi', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: textColor)),
+                GestureDetector(
+                  onTap: () => setState(() => _showMonthly = !_showMonthly),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: primaryColor.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text(
+                      _showMonthly ? 'HAFTALIK GÖRÜNÜM' : 'AYLIK GÖRÜNÜM',
+                      style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: primaryColor),
                     ),
                   ),
                 ),
@@ -361,74 +512,62 @@ class _HomePageState extends State<HomePage> {
               decoration: BoxDecoration(
                 color: cardColor,
                 borderRadius: BorderRadius.circular(20),
-                border: Border.all(
-                  color: isDark
-                      ? const Color(0xFF1E293B)
-                      : Colors.grey.shade100,
-                ),
+                border: Border.all(color: isDark ? const Color(0xFF1E293B) : Colors.grey.shade100),
               ),
               child: BarChart(
                 BarChartData(
                   alignment: BarChartAlignment.spaceAround,
-                  maxY: 100,
-                  barTouchData: BarTouchData(enabled: false),
+                  maxY: _showMonthly ? _maxMonthlySpending : _maxWeeklySpending,
+                  barTouchData: BarTouchData(
+                    enabled: true,
+                    touchTooltipData: BarTouchTooltipData(
+                      tooltipPadding: const EdgeInsets.all(8),
+                      tooltipMargin: 8,
+                      getTooltipItem: (group, groupIndex, rod, rodIndex) => BarTooltipItem(
+                        '₺${_formatAmount(rod.toY)}',
+                        const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12),
+                      ),
+                    ),
+                  ),
                   titlesData: FlTitlesData(
                     show: true,
                     bottomTitles: AxisTitles(
                       sideTitles: SideTitles(
                         showTitles: true,
+                        reservedSize: 26,
                         getTitlesWidget: (value, meta) {
-                          const days = [
-                            'Pzt',
-                            'Sal',
-                            'Çar',
-                            'Per',
-                            'Cum',
-                            'Cmt',
-                            'Paz',
-                          ];
+                          final i = value.toInt();
+                          String label;
+                          bool isActive;
+                          if (_showMonthly) {
+                            const m = ['O','Ş','M','N','M','H','T','A','E','E','K','A'];
+                            label = i < m.length ? m[i] : '';
+                            isActive = DateTime.now().month - 1 == i;
+                          } else {
+                            const d = ['Pzt','Sal','Çar','Per','Cum','Cmt','Paz'];
+                            label = i < d.length ? d[i] : '';
+                            isActive = DateTime.now().weekday - 1 == i;
+                          }
                           return Padding(
-                            padding: const EdgeInsets.only(top: 6.0),
-                            child: Text(
-                              days[value.toInt()],
-                              style: TextStyle(
-                                color: value.toInt() == 2
-                                    ? primaryColor
-                                    : (isDark
-                                          ? Colors.grey.shade500
-                                          : Colors.grey.shade500),
-                                fontSize: 10,
-                                fontWeight: value.toInt() == 2
-                                    ? FontWeight.bold
-                                    : FontWeight.normal,
-                              ),
-                            ),
+                            padding: const EdgeInsets.only(top: 6),
+                            child: Text(label, style: TextStyle(
+                              color: isActive ? primaryColor : Colors.grey.shade500,
+                              fontSize: 10,
+                              fontWeight: isActive ? FontWeight.bold : FontWeight.normal,
+                            )),
                           );
                         },
-                        reservedSize: 26,
                       ),
                     ),
-                    leftTitles: AxisTitles(
-                      sideTitles: SideTitles(showTitles: false),
-                    ),
-                    topTitles: AxisTitles(
-                      sideTitles: SideTitles(showTitles: false),
-                    ),
-                    rightTitles: AxisTitles(
-                      sideTitles: SideTitles(showTitles: false),
-                    ),
+                    leftTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                    topTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                    rightTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
                   ),
                   gridData: FlGridData(show: false),
                   borderData: FlBorderData(show: false),
-                  barGroups: [
-                    _bar(0, 60, isDark, primaryColor, false),
-                    _bar(1, 40, isDark, primaryColor, false),
-                    _bar(2, 85, isDark, primaryColor, true),
-                    _bar(3, 45, isDark, primaryColor, false),
-                    _bar(4, 25, isDark, primaryColor, false),
-                    _bar(5, 30, isDark, primaryColor, false),
-                    _bar(6, 20, isDark, primaryColor, false),
-                  ],
+                  barGroups: _showMonthly
+                    ? [for (int i = 0; i < 12; i++) _bar(i, _monthlySpendings[i], isDark, primaryColor, DateTime.now().month - 1 == i)]
+                    : [for (int i = 0; i < 7; i++) _bar(i, _weeklySpendings[i], isDark, primaryColor, DateTime.now().weekday - 1 == i)],
                 ),
               ),
             ),
@@ -687,7 +826,7 @@ class _HomePageState extends State<HomePage> {
           width: 10,
           backDrawRodData: BackgroundBarChartRodData(
             show: true,
-            toY: 100,
+            toY: _maxWeeklySpending,
             color: isDark ? const Color(0xFF1E293B) : const Color(0xFFF1F5F9),
           ),
           borderRadius: BorderRadius.circular(4),
@@ -731,5 +870,56 @@ class _HomePageState extends State<HomePage> {
     } catch (_) {
       return '-';
     }
+  }
+
+  Widget _buildMetricCard({
+    required String title,
+    required String amount,
+    required String footerText,
+    required IconData footerIcon,
+    required Color footerColor,
+    required IconData icon,
+    required Color iconBg,
+    required Color iconColor,
+    required Color cardColor,
+    required Color textColor,
+  }) {
+    return Container(
+      width: 160,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: cardColor,
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.04),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(color: iconBg, shape: BoxShape.circle),
+            child: Icon(icon, color: iconColor, size: 20),
+          ),
+          const SizedBox(height: 16),
+          Text(title, style: TextStyle(fontSize: 12, color: Colors.grey.shade600, fontWeight: FontWeight.w500)),
+          const SizedBox(height: 8),
+          Text(amount, style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: textColor)),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Icon(footerIcon, size: 12, color: footerColor),
+              const SizedBox(width: 4),
+              Text(footerText, style: TextStyle(fontSize: 10, color: footerColor, fontWeight: FontWeight.bold)),
+            ],
+          ),
+        ],
+      ),
+    );
   }
 }
