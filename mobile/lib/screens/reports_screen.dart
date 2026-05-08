@@ -9,6 +9,8 @@ import 'package:excel/excel.dart' hide Border;
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:fl_chart/fl_chart.dart';
+import '../services/pdf_report_service.dart';
+import 'budget_screen.dart';
 
 class ReportsScreen extends StatefulWidget {
   const ReportsScreen({super.key});
@@ -493,6 +495,25 @@ $dataStr
     }
   }
 
+  Future<void> _exportToPdf() async {
+    if (_docsThisMonth.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Dışa aktarılacak veri bulunamadı.')));
+      return;
+    }
+    try {
+      await PdfReportService.generateAndShare(
+        context: context,
+        docs: _docsThisMonth,
+        totalIncome: _thisMonthIncome,
+        totalExpense: _thisMonthExpense,
+        month: DateTime.now().month,
+        year: DateTime.now().year,
+      );
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('PDF hatası: $e')));
+    }
+  }
+
   Widget _buildCategoryPieChart(bool isDark, Color textColor, Color cardColor) {
     if (_docsThisMonth.isEmpty) return const SizedBox.shrink();
     
@@ -687,12 +708,72 @@ $dataStr
                             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                             elevation: 0,
                           ),
-                          child: const Text('Raporu İndir', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                          child: const Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(Icons.table_chart_outlined, color: Colors.white, size: 16),
+                              SizedBox(width: 6),
+                              Text('Excel', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                            ],
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: ElevatedButton(
+                          onPressed: _exportToPdf,
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.red.shade600,
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                            elevation: 0,
+                          ),
+                          child: const Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(Icons.picture_as_pdf_outlined, color: Colors.white, size: 16),
+                              SizedBox(width: 6),
+                              Text('PDF', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                            ],
+                          ),
                         ),
                       ),
                     ],
                   ),
-                  const SizedBox(height: 32),
+                  const SizedBox(height: 12),
+
+                  // Bütçe Takibi Kısayolu
+                  GestureDetector(
+                    onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const BudgetScreen())),
+                    child: Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: cardColor,
+                        borderRadius: BorderRadius.circular(16),
+                        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.02), blurRadius: 8, offset: const Offset(0, 2))],
+                      ),
+                      child: Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(10),
+                            decoration: BoxDecoration(color: Colors.purple.withOpacity(0.1), borderRadius: BorderRadius.circular(12)),
+                            child: const Icon(Icons.account_balance_wallet_outlined, color: Colors.purple, size: 22),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text('Bütçe Takibi', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: textColor)),
+                                Text('Kategori limitlerini bel irle ve takip et', style: TextStyle(fontSize: 12, color: Colors.grey.shade500)),
+                              ],
+                            ),
+                          ),
+                          Icon(Icons.chevron_right, color: Colors.grey.shade400),
+                        ],
+                      ),
+                    ),
+                  ),
 
                   // Gelir & Gider Analizi Section
                   Row(

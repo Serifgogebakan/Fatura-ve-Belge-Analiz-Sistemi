@@ -6,6 +6,9 @@ import 'screens/documents_screen.dart';
 import 'screens/reports_screen.dart';
 import 'screens/profile_screen.dart';
 import 'screens/upload_screen.dart';
+import 'screens/manual_entry_screen.dart';
+import 'screens/budget_screen.dart';
+import 'services/notification_service.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -33,6 +36,8 @@ class _HomePageState extends State<HomePage> {
   void initState() {
     super.initState();
     _loadDashboardData();
+    // Ödeme yaklaşan faturaları kontrol et ve bildir
+    NotificationService.checkAndNotifyDueDocs();
   }
 
   double _ciroHedefi = 1000000; // Varsayılan 1M
@@ -200,10 +205,7 @@ class _HomePageState extends State<HomePage> {
         width: 56,
         child: FloatingActionButton(
           onPressed: () {
-            Navigator.push(
-              context,
-              MaterialPageRoute(builder: (context) => const UploadScreen()),
-            ).then((_) => _loadDashboardData());
+            _showAddOptions(context, primaryColor, isDark);
           },
           backgroundColor: primaryColor,
           elevation: 4,
@@ -298,12 +300,117 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
+  void _showAddOptions(BuildContext context, Color primaryColor, bool isDark) {
+    final cardColor = Theme.of(context).cardColor;
+    final textColor = Theme.of(context).colorScheme.onSurface;
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: cardColor,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+      builder: (ctx) => Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Yeni Kayıt Ekle', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: textColor)),
+            const SizedBox(height: 6),
+            Text('Belge yükle veya manuel kayıt gir', style: TextStyle(fontSize: 12, color: Colors.grey.shade500)),
+            const SizedBox(height: 20),
+            _addOptionTile(
+              icon: Icons.camera_alt_outlined,
+              title: 'Fotoğraf / Tarama',
+              subtitle: 'Fatura veya belge tarayıp yükle',
+              color: primaryColor,
+              onTap: () {
+                Navigator.pop(ctx);
+                Navigator.push(context, MaterialPageRoute(builder: (_) => const UploadScreen()))
+                    .then((_) => _loadDashboardData());
+              },
+              isDark: isDark,
+            ),
+            const SizedBox(height: 12),
+            _addOptionTile(
+              icon: Icons.edit_note_rounded,
+              title: 'Manuel Giriş',
+              subtitle: 'Fotoğraf olmadan gelir/gider kaydet',
+              color: Colors.green.shade600,
+              onTap: () {
+                Navigator.pop(ctx);
+                Navigator.push(context, MaterialPageRoute(builder: (_) => const ManualEntryScreen()))
+                    .then((_) => _loadDashboardData());
+              },
+              isDark: isDark,
+            ),
+            const SizedBox(height: 12),
+            _addOptionTile(
+              icon: Icons.account_balance_wallet_outlined,
+              title: 'Bütçe Takibi',
+              subtitle: 'Kategori bazında bütçe limiti belirle',
+              color: Colors.purple,
+              onTap: () {
+                Navigator.pop(ctx);
+                Navigator.push(context, MaterialPageRoute(builder: (_) => const BudgetScreen()));
+              },
+              isDark: isDark,
+            ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _addOptionTile({
+    required IconData icon,
+    required String title,
+    required String subtitle,
+    required Color color,
+    required VoidCallback onTap,
+    required bool isDark,
+  }) {
+    final textColor = Theme.of(context).colorScheme.onSurface;
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: isDark ? const Color(0xFF0F172A) : const Color(0xFFF8FAFC),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: color.withOpacity(0.2)),
+        ),
+        child: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(color: color.withOpacity(0.12), borderRadius: BorderRadius.circular(12)),
+              child: Icon(icon, color: color, size: 24),
+            ),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(title, style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: textColor)),
+                  Text(subtitle, style: TextStyle(fontSize: 12, color: Colors.grey.shade500)),
+                ],
+              ),
+            ),
+            Icon(Icons.chevron_right, color: Colors.grey.shade400),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildDashboard(
     bool isDark,
     Color primaryColor,
     Color cardColor,
     Color textColor,
   ) {
+
     return RefreshIndicator(
       onRefresh: _loadDashboardData,
       child: SingleChildScrollView(

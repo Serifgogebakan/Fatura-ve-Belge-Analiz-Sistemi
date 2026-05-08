@@ -30,3 +30,30 @@ Küçük işletmeler, faturalarını, fişlerini ve çeşitli finansal belgeleri
 
 ---
 **Git Kullanımı:** Her haftanın görevi için ayrı branch (dal) açılıp düzenli olarak `main` dalına merge edilecektir.
+
+## 🗄️ Veritabanı Kurulumu (Supabase)
+
+Uygulamanın tam fonksiyonel çalışması için Supabase SQL Editor üzerinden aşağıdaki tabloların ve kolonların varlığını kontrol edin:
+
+### 1. Belgeler Tablosu (Genişletilmiş)
+Eğer `documents` tablonuzda bu kolonlar eksikse ekleyin:
+```sql
+ALTER TABLE documents ADD COLUMN IF NOT EXISTS category TEXT DEFAULT 'Diğer';
+ALTER TABLE documents ADD COLUMN IF NOT EXISTS belge_tipi TEXT DEFAULT 'gider'; -- 'gelir' veya 'gider'
+ALTER TABLE documents ADD COLUMN IF NOT EXISTS payment_status TEXT DEFAULT 'bekliyor'; -- 'ödendi', 'bekliyor', 'gecikti'
+```
+
+### 2. Kategoriler Verisi
+Kategori listesini yönetmek için (Opsiyonel ama önerilen):
+```sql
+-- Kategori bazlı bütçe takibi ve analiz için
+CREATE TABLE IF NOT EXISTS categories (
+  id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
+  name TEXT UNIQUE NOT NULL,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+
+INSERT INTO categories (name) 
+VALUES ('Fatura'), ('Fiş'), ('Sözleşme'), ('Sağlık'), ('Finans'), ('Lojistik'), ('Personel'), ('Vergi'), ('Diğer')
+ON CONFLICT (name) DO NOTHING;
+```
