@@ -32,9 +32,11 @@ class _DocumentDetailScreenState extends State<DocumentDetailScreen> {
   bool _isScanning = true;
   String _selectedCategory = 'Diğer';
   String _selectedBelgeTipi = 'gider';
+  String _paymentStatus = 'bekliyor';
 
   static const _categories = ['Fatura', 'Fiş', 'Sözleşme', 'Sağlık', 'Finans', 'Lojistik', 'Personel', 'Vergi', 'Diğer'];
   static const _belgeTipleri = ['gelir', 'gider'];
+  static const _odemeStatusleri = ['bekliyor', 'ödendi', 'gecikti', 'incelemede'];
 
   @override
   void initState() {
@@ -45,6 +47,7 @@ class _DocumentDetailScreenState extends State<DocumentDetailScreen> {
       _tutar = amount != null ? '₺$amount' : '0.00';
       _selectedCategory = widget.documentData!['category']?.toString() ?? 'Diğer';
       _selectedBelgeTipi = widget.documentData!['belge_tipi']?.toString() ?? 'gider';
+      _paymentStatus = widget.documentData!['payment_status']?.toString() ?? 'beklemede';
       
       final createdAt = widget.documentData!['created_at'] as String?;
       if (createdAt != null) {
@@ -279,6 +282,33 @@ class _DocumentDetailScreenState extends State<DocumentDetailScreen> {
                 }).toList(),
               ),
               const SizedBox(height: 20),
+              Text('ÖDEME DURUMU', style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.grey.shade500, letterSpacing: 1.2)),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: _odemeStatusleri.map((st) {
+                  final isSelected = _paymentStatus == st;
+                  Color stColor = Colors.grey;
+                  if (st == 'ödendi') stColor = Colors.blue;
+                  if (st == 'bekliyor') stColor = Colors.amber;
+                  if (st == 'gecikti') stColor = Colors.red;
+                  if (st == 'incelemede') stColor = Colors.orange;
+
+                  return GestureDetector(
+                    onTap: () => setModalState(() => _paymentStatus = st),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: isSelected ? stColor : (isDark ? const Color(0xFF0F172A) : const Color(0xFFF1F5F9)),
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: Text(st.toUpperCase(), style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: isSelected ? Colors.white : Colors.grey.shade600)),
+                    ),
+                  );
+                }).toList(),
+              ),
+              const SizedBox(height: 20),
               Text('KATEGORİ', style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.grey.shade500, letterSpacing: 1.2)),
               const SizedBox(height: 8),
               Wrap(
@@ -304,6 +334,29 @@ class _DocumentDetailScreenState extends State<DocumentDetailScreen> {
                 width: double.infinity,
                 child: ElevatedButton(
                   onPressed: () async {
+                    final confirm = await showDialog<bool>(
+                      context: context,
+                      builder: (c) => AlertDialog(
+                        backgroundColor: isDark ? const Color(0xFF1E293B) : Colors.white,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                        title: const Text('Emin misiniz?'),
+                        content: const Text('Kategori ve ödeme durumu bilgilerini güncellemek istediğinize emin misiniz?'),
+                        actions: [
+                          TextButton(onPressed: () => Navigator.pop(c, false), child: Text('İptal', style: TextStyle(color: Colors.grey.shade500))),
+                          ElevatedButton(
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: primaryColor,
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                            ),
+                            onPressed: () => Navigator.pop(c, true), 
+                            child: const Text('Evet, Güncelle', style: TextStyle(color: Colors.white))
+                          ),
+                        ],
+                      ),
+                    );
+
+                    if (confirm != true) return;
+
                     Navigator.pop(ctx);
                     setState(() {});
                     if (widget.isViewMode && widget.documentData != null) {
@@ -311,8 +364,9 @@ class _DocumentDetailScreenState extends State<DocumentDetailScreen> {
                         await Supabase.instance.client.from('documents').update({
                           'category': _selectedCategory,
                           'belge_tipi': _selectedBelgeTipi,
+                          'payment_status': _paymentStatus,
                         }).eq('id', widget.documentData!['id']);
-                        if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Kategori güncellendi!')));
+                        if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Bilgiler güncellendi!')));
                       } catch (e) {
                         if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Hata: $e')));
                       }
@@ -776,7 +830,48 @@ class _DocumentDetailScreenState extends State<DocumentDetailScreen> {
                     ),
                   ),
                 ),
-                const SizedBox(height: 24),
+                const SizedBox(height: 12),
+
+                // ─── ÖDEME DURUMU (VIEW MODUNDA) ────────────────────────────
+                if (widget.isViewMode)
+                  GestureDetector(
+                    onTap: _showCategorySelector, // Aynı popup içinde ödeme durumu da değiştirilebilir
+                    child: Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: cardColor,
+                        borderRadius: BorderRadius.circular(20),
+                        boxShadow: [
+                          BoxShadow(color: Colors.black.withOpacity(0.02), blurRadius: 8, offset: const Offset(0, 2)),
+                        ],
+                      ),
+                      child: Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(10),
+                            decoration: BoxDecoration(
+                              color: Colors.amber.withOpacity(0.1),
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: Icon(Icons.payment_rounded, color: Colors.amber.shade700, size: 22),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text('ÖDEME DURUMU', style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.grey.shade500, letterSpacing: 1.0)),
+                                const SizedBox(height: 4),
+                                Text(_paymentStatus.toUpperCase(), style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: textColor)),
+                              ],
+                            ),
+                          ),
+                          Icon(Icons.chevron_right, color: Colors.grey.shade400),
+                        ],
+                      ),
+                    ),
+                  ),
+                if (widget.isViewMode) const SizedBox(height: 24),
 
                 // ─── OCR METNİ BAŞLIK ────────────────────────────
                 Row(

@@ -109,9 +109,14 @@ class _HomePageState extends State<HomePage> {
           } catch (_) {}
         }
 
-        if (status != null && status.toLowerCase() == 'bekliyor' && belgeTipi != 'gelir') {
-          pendingTotal += amount;
-          overdueCount++;
+        if (status != null && belgeTipi != 'gelir') {
+          final s = status.toLowerCase();
+          if (s == 'bekliyor' || s == 'gecikti') {
+            pendingTotal += amount;
+          }
+          if (s == 'gecikti') {
+            overdueCount++;
+          }
         }
       }
 

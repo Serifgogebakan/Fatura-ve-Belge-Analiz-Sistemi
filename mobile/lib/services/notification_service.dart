@@ -42,13 +42,15 @@ class NotificationService {
       final response = await Supabase.instance.client
           .from('documents')
           .select('id, name, amount, payment_status, created_at, belge_tipi')
-          .eq('user_id', userId)
-          .eq('payment_status', 'bekliyor');
+          .eq('user_id', userId);
 
       int notifId = 100;
       for (var doc in response) {
         final tipi = (doc['belge_tipi'] as String? ?? 'gider').toLowerCase();
         if (tipi == 'gelir') continue;
+
+        final status = (doc['payment_status'] as String?)?.toLowerCase();
+        if (status != 'bekliyor' && status != 'gecikti') continue;
 
         final createdAt = doc['created_at'] as String?;
         if (createdAt == null) continue;
@@ -57,16 +59,23 @@ class NotificationService {
           final dt = DateTime.parse(createdAt).toLocal();
           // 30 gün sonrasını "son ödeme tarihi" olarak kabul et
           final dueDate = dt.add(const Duration(days: 30));
+          final amount = (doc['amount'] as num?)?.toDouble() ?? 0;
+          final name = doc['name']?.toString() ?? 'Bilinmeyen Belge';
 
-          if (dueDate.isBefore(threeDaysLater) && dueDate.isAfter(now)) {
+          if (status == 'gecikti' || dueDate.isBefore(now)) {
+            // Fatura gecikmiş
+            await _sendNotification(
+              id: notifId++,
+              title: '🚨 Gecikmiş Fatura: $name',
+              body: '₺${amount.toStringAsFixed(0)} tutarındaki bu faturanın ödemesi gecikmiş durumda!',
+            );
+          } else if (dueDate.isBefore(threeDaysLater) && dueDate.isAfter(now)) {
+            // Ödeme yaklaşıyor (bekliyor)
             final daysLeft = dueDate.difference(now).inDays;
-            final amount = (doc['amount'] as num?)?.toDouble() ?? 0;
-            final name = doc['name']?.toString() ?? 'Bilinmeyen Belge';
-
             await _sendNotification(
               id: notifId++,
               title: '⚠️ Ödeme Yaklaşıyor: $name',
-              body: '$daysLeft gün içinde ödenmesi gereken ₺${amount.toStringAsFixed(0)} tutarında bekleyen fatura var.',
+              body: '$daysLeft gün içinde ödenmesi gereken ₺${amount.toStringAsFixed(0)} tutarında bekleyen faturanız var.',
             );
           }
         } catch (_) {}

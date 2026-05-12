@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 class BudgetScreen extends StatefulWidget {
   const BudgetScreen({super.key});
@@ -35,13 +34,13 @@ class _BudgetScreenState extends State<BudgetScreen> {
   Future<void> _loadData() async {
     setState(() => _isLoading = true);
     try {
-      final prefs = await SharedPreferences.getInstance();
       final userId = _supabase.auth.currentUser?.id;
       if (userId == null) return;
 
       final now = DateTime.now();
       final firstDay = DateTime(now.year, now.month, 1).toUtc().toIso8601String();
 
+      // 1. Harcamaları Çek (Giderler)
       final response = await _supabase
           .from('documents')
           .select('category, amount, belge_tipi')
@@ -56,9 +55,22 @@ class _BudgetScreenState extends State<BudgetScreen> {
         spendings[cat] = (spendings[cat] ?? 0) + (doc['amount'] as num? ?? 0).toDouble();
       }
 
+      // 2. Bütçe Limitlerini Çek (Supabase 'budgets' tablosundan)
+      final budgetRes = await _supabase
+          .from('budgets')
+          .select('category, amount_limit')
+          .eq('user_id', userId)
+          .eq('month', now.month)
+          .eq('year', now.year);
+
+      final Map<String, double> dbLimits = {};
+      for (var b in budgetRes) {
+        dbLimits[b['category'] as String] = (b['amount_limit'] as num).toDouble();
+      }
+
       setState(() {
         for (var kat in _kategoriler) {
-          _limits[kat] = prefs.getDouble('limit_$kat') ?? _defaultLimits[kat] ?? 5000.0;
+          _limits[kat] = dbLimits[kat] ?? _defaultLimits[kat] ?? 5000.0;
           _spendings[kat] = spendings[kat] ?? 0.0;
         }
         _isLoading = false;
@@ -69,9 +81,45 @@ class _BudgetScreenState extends State<BudgetScreen> {
   }
 
   Future<void> _saveLimit(String kategori, double value) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setDouble('limit_$kategori', value);
-    setState(() => _limits[kategori] = value);
+    final userId = _supabase.auth.currentUser?.id;
+    if (userId == null) return;
+
+    final now = DateTime.now();
+
+    try {
+      // Upsert işlemi: Supabase'de 'user_id', 'category', 'month', 'year' uniq index'ine göre kaydeder/günceller.
+      // Eğer uniq constraint yoksa manuel kontrol (select -> update/insert) kullanıyoruz ki hata vermesin.
+      final existing = await _supabase
+          .from('budgets')
+          .select('id')
+          .eq('user_id', userId)
+          .eq('category', kategori)
+          .eq('month', now.month)
+          .eq('year', now.year)
+          .maybeSingle();
+
+      if (existing != null) {
+        await _supabase.from('budgets').update({
+          'amount_limit': value,
+        }).eq('id', existing['id']);
+      } else {
+        await _supabase.from('budgets').insert({
+          'user_id': userId,
+          'category': kategori,
+          'amount_limit': value,
+          'month': now.month,
+          'year': now.year,
+        });
+      }
+
+      setState(() => _limits[kategori] = value);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Bütçe kaydedilemedi: $e'), backgroundColor: Colors.red),
+        );
+      }
+    }
   }
 
   void _showEditLimit(String kategori, bool isDark, Color primaryColor, Color cardColor, Color textColor) {

@@ -26,6 +26,8 @@ class _UploadScreenState extends State<UploadScreen> {
   double _storageUsedGB = 1.2;
   double _storageTotalGB = 5.0;
   String _selectedBelgeTipi = 'gider'; // 'gelir' veya 'gider'
+  String _selectedKategori = 'Fatura';
+  static const _kategoriler = ['Fatura', 'Fiş', 'Sözleşme', 'Sağlık', 'Finans', 'Lojistik', 'Personel', 'Vergi', 'Diğer'];
 
   List<Map<String, dynamic>> _recentUploads = [];
 
@@ -219,7 +221,7 @@ class _UploadScreenState extends State<UploadScreen> {
             'original_filename': path_util.basename(file.path),
             'cloudinary_secure_url': publicUrl,
             'file_type': mimeType.contains('pdf') ? 'pdf' : 'image',
-            'category': 'DİĞER',
+            'category': _selectedKategori,
             'status': 'beklemede',
             'payment_status': 'beklemede',
             'amount': parsedAmount,
@@ -420,6 +422,48 @@ class _UploadScreenState extends State<UploadScreen> {
                   ],
                 ),
                 const SizedBox(height: 20),
+
+                // ─── KATEGORİ SEÇİMİ ─────────────────────────────────────────
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    'KATEGORİ',
+                    style: TextStyle(
+                      fontSize: 10,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.grey.shade500,
+                      letterSpacing: 1.2,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: _kategoriler.map((kat) {
+                    final isSelected = _selectedKategori == kat;
+                    return GestureDetector(
+                      onTap: () => setState(() => _selectedKategori = kat),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                        decoration: BoxDecoration(
+                          color: isSelected ? primaryColor : (isDark ? const Color(0xFF1E293B) : const Color(0xFFF1F5F9)),
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(color: isSelected ? primaryColor : Colors.transparent),
+                        ),
+                        child: Text(
+                          kat,
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            color: isSelected ? Colors.white : Colors.grey.shade600,
+                          ),
+                        ),
+                      ),
+                    );
+                  }).toList(),
+                ),
+                const SizedBox(height: 24),
 
                 // ─── KAMERA BUTONU ─────────────────────────────────────────
                 GestureDetector(

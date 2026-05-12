@@ -14,6 +14,7 @@ class _ManualEntryScreenState extends State<ManualEntryScreen> {
 
   final _firmaCtrl = TextEditingController();
   final _tutarCtrl = TextEditingController();
+  final _kdvCtrl = TextEditingController();
   final _aciklamaCtrl = TextEditingController();
 
   String _belgeTipi = 'gider';
@@ -29,6 +30,7 @@ class _ManualEntryScreenState extends State<ManualEntryScreen> {
   void dispose() {
     _firmaCtrl.dispose();
     _tutarCtrl.dispose();
+    _kdvCtrl.dispose();
     _aciklamaCtrl.dispose();
     super.dispose();
   }
@@ -44,16 +46,22 @@ class _ManualEntryScreenState extends State<ManualEntryScreen> {
       final tutar = double.tryParse(
         _tutarCtrl.text.replaceAll('.', '').replaceAll(',', '.').trim(),
       ) ?? 0.0;
+      
+      final kdv = double.tryParse(
+        _kdvCtrl.text.replaceAll('.', '').replaceAll(',', '.').trim(),
+      ) ?? 0.0;
 
       await _supabase.from('documents').insert({
         'user_id': userId,
         'name': _firmaCtrl.text.trim(),
         'amount': tutar,
+        'tax_amount': kdv,
+        'document_date': _tarih.toUtc().toIso8601String(),
         'category': _kategori,
         'belge_tipi': _belgeTipi,
         'payment_status': _odemeStatus,
         'file_type': 'Manuel Giriş',
-        'created_at': _tarih.toUtc().toIso8601String(),
+        'created_at': DateTime.now().toUtc().toIso8601String(),
         'ocr_text': _aciklamaCtrl.text.trim().isNotEmpty ? _aciklamaCtrl.text.trim() : 'Manuel olarak girildi.',
       });
 
@@ -190,6 +198,18 @@ class _ManualEntryScreenState extends State<ManualEntryScreen> {
                 icon: Icons.business_outlined,
                 isDark: isDark, cardColor: cardColor, textColor: textColor,
                 validator: (v) => (v == null || v.trim().isEmpty) ? 'Firma adı zorunlu' : null,
+              ),
+              const SizedBox(height: 20),
+
+              // KDV
+              _sectionLabel('KDV TUTARI (₺)'),
+              const SizedBox(height: 8),
+              _inputField(
+                controller: _kdvCtrl,
+                hint: 'Örn: 18.50',
+                icon: Icons.percent_outlined,
+                isDark: isDark, cardColor: cardColor, textColor: textColor,
+                keyboardType: const TextInputType.numberWithOptions(decimal: true),
               ),
               const SizedBox(height: 20),
 
@@ -382,6 +402,7 @@ class _ManualEntryScreenState extends State<ManualEntryScreen> {
     required Color cardColor,
     required Color textColor,
     int maxLines = 1,
+    TextInputType? keyboardType,
     String? Function(String?)? validator,
   }) {
     return Container(
@@ -393,6 +414,7 @@ class _ManualEntryScreenState extends State<ManualEntryScreen> {
       child: TextFormField(
         controller: controller,
         maxLines: maxLines,
+        keyboardType: keyboardType,
         style: TextStyle(color: textColor, fontSize: 14),
         validator: validator,
         decoration: InputDecoration(
