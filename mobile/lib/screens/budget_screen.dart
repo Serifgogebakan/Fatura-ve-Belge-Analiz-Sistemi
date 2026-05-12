@@ -1,8 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
-/// Bütçe Takibi Ekranı
-/// Kategori bazında aylık bütçe limiti belirleme ve harcama takibi
 class BudgetScreen extends StatefulWidget {
   const BudgetScreen({super.key});
 
@@ -14,7 +13,6 @@ class _BudgetScreenState extends State<BudgetScreen> {
   final _supabase = Supabase.instance.client;
   bool _isLoading = true;
 
-  // Kategori → (limit, harcama)
   final Map<String, double> _limits = {};
   final Map<String, double> _spendings = {};
 
@@ -37,6 +35,7 @@ class _BudgetScreenState extends State<BudgetScreen> {
   Future<void> _loadData() async {
     setState(() => _isLoading = true);
     try {
+      final prefs = await SharedPreferences.getInstance();
       final userId = _supabase.auth.currentUser?.id;
       if (userId == null) return;
 
@@ -59,7 +58,7 @@ class _BudgetScreenState extends State<BudgetScreen> {
 
       setState(() {
         for (var kat in _kategoriler) {
-          _limits[kat] = _defaultLimits[kat] ?? 5000.0;
+          _limits[kat] = prefs.getDouble('limit_$kat') ?? _defaultLimits[kat] ?? 5000.0;
           _spendings[kat] = spendings[kat] ?? 0.0;
         }
         _isLoading = false;
@@ -67,6 +66,12 @@ class _BudgetScreenState extends State<BudgetScreen> {
     } catch (e) {
       setState(() => _isLoading = false);
     }
+  }
+
+  Future<void> _saveLimit(String kategori, double value) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setDouble('limit_$kategori', value);
+    setState(() => _limits[kategori] = value);
   }
 
   void _showEditLimit(String kategori, bool isDark, Color primaryColor, Color cardColor, Color textColor) {
@@ -110,7 +115,7 @@ class _BudgetScreenState extends State<BudgetScreen> {
                 onPressed: () {
                   final val = double.tryParse(ctrl.text.replaceAll(',', '.'));
                   if (val != null && val > 0) {
-                    setState(() => _limits[kategori] = val);
+                    _saveLimit(kategori, val);
                   }
                   Navigator.pop(ctx);
                 },
