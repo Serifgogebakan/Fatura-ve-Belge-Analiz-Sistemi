@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import '../main.dart';
 
 // ==========================================
 // HESAP AYARLARI EKRANI
@@ -473,6 +475,148 @@ class SupportScreen extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+// ==========================================
+// TEMA AYARLARI EKRANI
+// ==========================================
+class ThemeSettingsScreen extends StatefulWidget {
+  const ThemeSettingsScreen({super.key});
+
+  @override
+  State<ThemeSettingsScreen> createState() => _ThemeSettingsScreenState();
+}
+
+class _ThemeSettingsScreenState extends State<ThemeSettingsScreen> {
+  String _selectedTheme = 'system';
+
+  @override
+  void initState() {
+    super.initState();
+    _loadCurrentTheme();
+  }
+
+  Future<void> _loadCurrentTheme() async {
+    final prefs = await SharedPreferences.getInstance();
+    setState(() {
+      _selectedTheme = prefs.getString('theme_mode') ?? 'system';
+    });
+  }
+
+  Future<void> _changeTheme(String theme) async {
+    setState(() {
+      _selectedTheme = theme;
+    });
+
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('theme_mode', theme);
+
+    if (theme == 'light') {
+      MyApp.themeNotifier.value = ThemeMode.light;
+    } else if (theme == 'dark') {
+      MyApp.themeNotifier.value = ThemeMode.dark;
+    } else {
+      MyApp.themeNotifier.value = ThemeMode.system;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final cardColor = Theme.of(context).cardColor;
+    final primaryColor = isDark ? const Color(0xFF3B82F6) : const Color(0xFF1D4ED8);
+    final textColor = Theme.of(context).colorScheme.onSurface;
+
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Tema Ayarları', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+        centerTitle: true,
+        elevation: 0,
+        backgroundColor: Colors.transparent,
+      ),
+      body: ListView(
+        padding: const EdgeInsets.all(24),
+        children: [
+          Container(
+            decoration: BoxDecoration(
+              color: cardColor,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: isDark ? const Color(0xFF1E293B) : Colors.grey.shade100),
+            ),
+            child: Column(
+              children: [
+                _buildThemeOption(
+                  'Cihaz Teması',
+                  'Sistem ayarlarına göre otomatik değişir.',
+                  'system',
+                  Icons.settings_brightness_outlined,
+                  primaryColor,
+                  textColor,
+                ),
+                Divider(height: 1, indent: 56, color: isDark ? const Color(0xFF1E293B) : Colors.grey.shade100),
+                _buildThemeOption(
+                  'Açık Tema',
+                  'Aydınlık görünüm.',
+                  'light',
+                  Icons.light_mode_outlined,
+                  primaryColor,
+                  textColor,
+                ),
+                Divider(height: 1, indent: 56, color: isDark ? const Color(0xFF1E293B) : Colors.grey.shade100),
+                _buildThemeOption(
+                  'Koyu Tema',
+                  'Göz yormayan karanlık görünüm.',
+                  'dark',
+                  Icons.dark_mode_outlined,
+                  primaryColor,
+                  textColor,
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildThemeOption(
+    String title,
+    String subtitle,
+    String value,
+    IconData icon,
+    Color primaryColor,
+    Color textColor,
+  ) {
+    final isSelected = _selectedTheme == value;
+    return RadioListTile<String>(
+      title: Row(
+        children: [
+          Icon(icon, color: isSelected ? primaryColor : Colors.grey, size: 20),
+          const SizedBox(width: 12),
+          Text(
+            title,
+            style: TextStyle(
+              fontWeight: FontWeight.w600,
+              fontSize: 15,
+              color: textColor,
+            ),
+          ),
+        ],
+      ),
+      subtitle: Padding(
+        padding: const EdgeInsets.only(left: 32),
+        child: Text(subtitle, style: TextStyle(color: Colors.grey.shade500, fontSize: 12)),
+      ),
+      value: value,
+      groupValue: _selectedTheme,
+      onChanged: (val) {
+        if (val != null) _changeTheme(val);
+      },
+      activeColor: primaryColor,
+      controlAffinity: ListTileControlAffinity.trailing,
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
     );
   }
 }

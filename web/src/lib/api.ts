@@ -2,9 +2,14 @@
  * Backend API ile iletişim katmanı.
  * Tüm auth ve veri işlemleri bu modül üzerinden .NET backend'e yönlendirilir.
  */
+const isBrowser = typeof window !== 'undefined';
+const defaultApiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5057';
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5057';
-
+// Tarayıcıdaysak ve siteye 192.168... gibi bir IP üzerinden erişiliyorsa,
+// Backend'in de aynı IP'de çalıştığını varsayarak dinamik bir URL oluşturur.
+const API_URL = isBrowser 
+  ? `${window.location.protocol}//${window.location.hostname}:5057`
+  : defaultApiUrl;
 interface ApiResponse<T = any> {
   data: T | null;
   error: string | null;

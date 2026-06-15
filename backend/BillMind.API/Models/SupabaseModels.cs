@@ -49,6 +49,9 @@ public class DocumentRow : BaseModel
     [Column("payment_status")]
     public string? PaymentStatus { get; set; }
 
+    [Column("belge_tipi")]
+    public string? BelgeTipi { get; set; }
+
     [Column("created_at")]
     public string? CreatedAt { get; set; }
     

@@ -63,6 +63,7 @@ public class SupabaseService
                 Amount = doc.ParsedData?.TotalAmount ?? 0,
                 Currency = doc.ParsedData?.Currency ?? "TRY",
                 PaymentStatus = "beklemede",
+                BelgeTipi = doc.ParsedData?.Category == "GELİR" ? "gelir" : "gider",
                 CreatedAt = doc.UploadedAt.ToString("o")
             };
 
@@ -103,7 +104,8 @@ public class SupabaseService
                 { "totalAmount", m.Amount },
                 { "currency", m.Currency ?? "TRY" },
                 { "paymentStatus", m.PaymentStatus ?? "" },
-                { "payment_status", m.PaymentStatus ?? "" }
+                { "payment_status", m.PaymentStatus ?? "" },
+                { "belge_tipi", m.BelgeTipi ?? "gider" }
             }).ToList();
         }
         catch (Exception ex)

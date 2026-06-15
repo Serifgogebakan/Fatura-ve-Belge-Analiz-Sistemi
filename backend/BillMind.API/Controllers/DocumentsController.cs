@@ -47,6 +47,75 @@ public class DocumentsController : ControllerBase
     public async Task<ActionResult<object>> SaveMetadata([FromBody] DocumentMetadataDto dto)
     {
         var docId = Guid.NewGuid();
+        
+        byte[] fileBytes = Array.Empty<byte>();
+        string contentType = "application/octet-stream";
+
+        if (!string.IsNullOrEmpty(dto.CloudinarySecureUrl))
+        {
+            try
+            {
+                using var httpClient = new HttpClient();
+                fileBytes = await httpClient.GetByteArrayAsync(dto.CloudinarySecureUrl);
+                
+                var urlLower = dto.CloudinarySecureUrl.ToLower();
+                if (urlLower.EndsWith(".pdf"))
+                {
+                    contentType = "application/pdf";
+                }
+                else if (urlLower.EndsWith(".jpg") || urlLower.EndsWith(".jpeg"))
+                {
+                    contentType = "image/jpeg";
+                }
+                else if (urlLower.EndsWith(".png"))
+                {
+                    contentType = "image/png";
+                }
+                else
+                {
+                    contentType = dto.FileType == "pdf" ? "application/pdf" : "image/png";
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "CloudinarySecureUrl indirme hatası: {Url}", dto.CloudinarySecureUrl);
+            }
+        }
+
+        InvoiceData parsedData;
+        string status = "beklemede";
+
+        if (fileBytes.Length > 0)
+        {
+            try
+            {
+                // OCR işlemi
+                var rawText = await _ocr.ExtractTextAsync(fileBytes, contentType);
+
+                // Parse işlemi
+                parsedData = _parser.Parse(rawText);
+                status = "tamamlandı";
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "OCR/Parse işlemi sırasında hata oluştu. Varsayılan veri kullanılacak.");
+                parsedData = new InvoiceData 
+                {
+                    Category = dto.FileType == "image" ? "MAKBUZ" : "FATURA",
+                    TotalAmount = 0
+                };
+                status = "HATA";
+            }
+        }
+        else
+        {
+            parsedData = new InvoiceData 
+            {
+                Category = dto.FileType == "image" ? "MAKBUZ" : "FATURA",
+                TotalAmount = 0
+            };
+        }
+
         var doc = new Document
         {
             Id = docId,
@@ -54,14 +123,10 @@ public class DocumentsController : ControllerBase
             FileName = dto.FileName,
             FileUrl = dto.CloudinarySecureUrl,
             FileType = dto.FileType,
-            FileSizeBytes = 0,
-            Status = "beklemede",
+            FileSizeBytes = fileBytes.Length,
+            Status = status,
             UploadedAt = DateTime.UtcNow,
-            ParsedData = new InvoiceData 
-            {
-                Category = dto.FileType == "image" ? "MAKBUZ" : "FATURA",
-                TotalAmount = 0
-            }
+            ParsedData = parsedData
         };
 
         var saved = await _supabase.SaveDocumentAsync(doc);

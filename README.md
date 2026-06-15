@@ -1,32 +1,95 @@
-# Akıllı Belge Yönetimi ve Finansal Analiz Sistemi 🚀
+# BillMind - Akıllı Fatura ve Belge Analiz Sistemi 🚀
 
-> Küçük işletmelerin fiziksel ortamda sakladığı fatura, fiş ve finansal belgeleri dijital ortama taşıyan, OCR (Optik Karakter Tanıma) destekli belge yönetim ve analiz sistemi.
-
-## 📌 Problem Tanımı
-Küçük işletmeler, faturalarını, fişlerini ve çeşitli finansal belgelerini çoğu zaman fiziksel ortamda saklamaktadır. Bu durum belgelerin zamanla kaybolmasına ve finansal verilerin düzenli bir şekilde analiz edilememesine neden olmaktadır. Bu sorunları ortadan kaldırmak ve finansal yönetimi daha düzenli hale getirmek için **"Dijital Belge Yönetimi ve Finansal Analiz Sistemi"** geliştirilmesi hedeflenmiştir.
-
-## 🛠️ Kullanılacak Teknolojiler (PDF Formatına Göre)
-- **Web Paneli:** Next.js (React tabanlı framework)
-- **Mobil Uygulama:** Flutter (iOS ve Android için cross-platform)
-- **Backend (API Sunucusu):** .NET
-- **Veritabanı ve Yetkilendirme (Auth):** Supabase (PostgreSQL tabanlı BaaS)
-
-## 📅 Proje İş Takvimi (10 Hafta)
-
-*(Not: PDF'teki haftalık akış mantığı korunarak, yazılım geliştirme sürecine daha uygun ve mantıklı bir sıraya getirilmiştir.)*
-
-| Hafta | Aşama / Görev | İçerik ve Çıktılar |
-| :--- | :--- | :--- |
-| **1. Hafta** | **Tasarım & Planlama** | Sistem tasarımı, veritabanı (Supabase) şemasının planlanması ve GitHub proje iskeletinin kurulması. |
-| **2. Hafta** | **Backend Temelleri** |  Next.js ile projenin web arayüzünün kodlanması, Supabase bağlantısının yapılması ve Kullanıcı Kayıt/Giriş (Auth)    sisteminin tasarlanması. |                     
-| **3. Hafta** | **Mobil Temelleri** | Flutter projesinin oluşturulması, temel ekranların (giriş, anasayfa) tasarlanması ve Auth entegrasyonu. |
-| **4. Hafta** | **Belge Yükleme** | Mobil tarafta (Flutter) kamera ve galeri erişimi ile belge seçme; resimleri sunucuya/Supabase Storage'a yükleme sistemi. |
-| **5. Hafta** | **Web Paneli** | .NET backend API kurumu, yüklenmiş olan belgeleri liste halinde ulgörüntüleme ve yönetme (CRUD) ekranları. |
-| **6. Hafta** | **Veri Analizi** | OCR'dan elde edilen metin yığınlarından düzenli fatura bilgilerini (Tutar, Tarih, VKN vb.) ayrıştırma (parse) ve veritabanına kaydetme. |
-| **7. Hafta** | **OCR Entegrasyonu** | Yüklenen belge görsellerinden metin (text) çıkaran OCR sisteminin (Tesseract / Cloud Vision vb.) backend'e entegre edilmesi. |
-| **8. Hafta** | **Finansal Grafikler** | Taranan fatura verilerine dayanarak harcama analiz grafikleri (pasta, çizgi grafikler) ve finansal raporlama ekranlarının yapılması. |
-| **9. Hafta** | **Arama ve Filtreleme** | Hem mobilde hem web'de yüzlerce belge/fatura içinde metin bazlı, tarih veya tutara göre arama/filtreleme sisteminin geliştirilmesi. |
-| **10. Hafta** | **Test & Sunum** | Tüm sistemin (Uçtan Uca) test edilmesi, tespit edilen hataların giderilmesi (Bugfix) ve final proje sunumu. |
+> Küçük işletmelerin ve bireysel kullanıcıların fiziksel fatura, fiş ve finansal belgelerini dijital ortama taşıyan; OCR (Optik Karakter Tanıma) ve Yapay Zeka destekli modern belge yönetim ve finansal analiz sistemi.
 
 ---
-**Git Kullanımı:** Her haftanın görevi için ayrı branch (dal) açılıp düzenli olarak `main` dalına merge edilecektir.
+
+## 📌 Proje Hakkında
+
+**BillMind**, işletmelerin finansal belgelerini tarayarak metin verilerini otomatik olarak çıkaran, bu verileri yapay zeka ile anlamlandırıp kategorize eden ve dinamik grafiklerle raporlayan bütünsel bir çözümdür. 
+
+Sistem; ofis içi yönetim için gelişmiş bir **Web Dashboard**, sahada anlık belge yükleme ve yapay zeka asistanıyla sohbet için **Mobil Uygulama** ve tüm işlemleri koordine eden **.NET Backend** servisinden oluşmaktadır.
+
+---
+
+## ✨ Ana Özellikler
+
+### 📱 Mobil Uygulama (Flutter)
+- **Kamera ile Belge Tarama:** Fatura veya fişlerinizi doğrudan kamerayla çekerek sisteme yükleyin.
+- **Yapay Zeka Destekli Sohbet (AI Chat):** Finansal durumunuz, harcamalarınız veya yüklediğiniz belgeler hakkında Groq API destekli yapay zeka asistanına sorular sorun.
+- **Hızlı ve Manuel Belge Girişi:** Otomatik taramaya alternatif olarak hızlıca manuel belge kaydı ekleme.
+- **Bütçe Takibi ve Limit Tanımlama:** Kategorilere göre bütçe limitleri tanımlayın, harcamalarınızı bu limitlere göre takip edin.
+- **Bildirim ve Hatırlatıcılar:** Ödeme tarihleri yaklaşan faturalar için anlık bildirimler alın.
+- **Profil ve Tema Yönetimi:** Karanlık/Açık tema desteği, profil ve şirket bilgileri güncelleme.
+
+### 💻 Web Yönetim Paneli (Next.js)
+- **Gelişmiş Finansal Analiz & Özet:** İşletmenizin nakit akışını, gelir/gider dengesini ve bütçe durumunu modern grafiklerle izleyin.
+- **Belge Yönetim Paneli (CRUD):** Tüm belgelerinizi listeleyin, filtreleyin, detaylarını inceleyin ve düzenleyin.
+- **PDF ve Excel Dışa Aktarım:** Finansal raporlarınızı tek tıkla dışa aktarın.
+- **Kategori Bazlı Bütçe Yönetimi:** Dinamik olarak bütçe oluşturup harcama limitlerinizi yönetin.
+- **Güvenli Giriş & Kayıt Sistemi:** Supabase Auth entegrasyonu ile güvenli kullanıcı yönetimi.
+
+### ⚙️ Backend Servisi (.NET API)
+- **OCR Entegrasyonu:** Yüklenen belgelerin üzerindeki metinleri otomatik olarak okuma.
+- **Akıllı Bilgi Ayrıştırma:** OCR çıktılarındaki tutar, KDV, VKN, tarih ve tedarikçi bilgilerini ayrıştırarak yapılandırılmış veri haline getirme.
+- **Supabase Entegrasyonu:** Tüm veri saklama, dosya yükleme (Storage) ve profil işlemlerinin Supabase API'leri üzerinden yönetimi.
+
+---
+
+## 🛠️ Teknoloji Yığını
+
+- **Web Paneli:** Next.js (React), TailwindCSS, Chart.js / Recharts
+- **Mobil Uygulama:** Flutter, Supabase SDK, SharedPreferences, Cloudinary (Avatar Yönetimi)
+- **Backend (API):** .NET (C#), Supabase C# Client, OCR ve LLM Servisleri
+- **Veritabanı & Altyapı:** Supabase (PostgreSQL, RLS - Satır Bazlı Güvenlik, Storage Buckets)
+
+---
+
+## 📂 Proje Yapısı
+
+```text
+Fatura-ve-Belge-Analiz-Sistemi/
+├── backend/                  # .NET Web API Backend Projesi
+│   └── BillMind.API/         # API Modülleri, Servisler ve Controller'lar
+├── mobile/                   # Flutter Mobil Uygulaması
+│   ├── lib/                  # Dart Kodları (Ekranlar, Servisler)
+│   └── android/ios/          # Platforma Özel Yapılandırmalar
+├── web/                      # Next.js Web Dashboard Uygulaması
+│   └── src/                  # React Bileşenleri, Sayfalar ve API Entegrasyonu
+└── README.md                 # Proje Genel Dokümantasyonu
+```
+
+---
+
+## 🚀 Kurulum ve Çalıştırma
+
+### 1. Ön Gereksinimler
+Projenin tüm servislerinin çalışması için bir **Supabase** projesine, **Cloudinary** hesabına ve yapay zeka özellikleri için **Groq API** anahtarına ihtiyacınız vardır.
+
+### 2. Backend Çalıştırma
+```bash
+cd backend/BillMind.API
+dotnet restore
+dotnet run
+```
+
+### 3. Web Panelini Çalıştırma
+```bash
+cd web
+npm install
+npm run dev
+```
+Uygulama varsayılan olarak `http://localhost:3000` adresinde çalışacaktır.
+
+### 4. Mobil Uygulamayı Çalıştırma
+`mobile/.env` dosyasını oluşturup gerekli API anahtarlarınızı girdikten sonra:
+```bash
+cd mobile
+flutter pub get
+flutter run
+```
+
+---
+
+## 🔒 Lisans ve Güvenlik
+Bu proje, Supabase RLS (Satır Bazlı Güvenlik) politikaları kullanılarak korunmaktadır. Her kullanıcı yalnızca kendi yüklediği belgelere ve profil verilerine erişebilir.

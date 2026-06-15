@@ -34,6 +34,13 @@ export default function SettingsPage() {
     marketingEmails: false,
   });
 
+  // Finansal Ayarlar
+  const [financials, setFinancials] = useState({
+    currency: "TRY",
+    defaultTaxRate: "18",
+    fiscalYearStart: "ocak"
+  });
+
   // Belge istatistikleri
   const [docCount, setDocCount] = useState(0);
 
@@ -316,6 +323,68 @@ export default function SettingsPage() {
                </div>
             </div>
           </div>
+        </div>
+      </div>
+
+      {/* Financial Settings Row */}
+      <div className="bg-card border border-border rounded-xl p-8 shadow-sm">
+        <h3 className="text-lg font-bold flex items-center gap-2 mb-8">
+          <svg className="text-blue-700 dark:text-blue-400 w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+          Finansal Varsayılanlar
+        </h3>
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <div>
+            <label className="block text-xs font-bold uppercase tracking-wider text-muted mb-2">VARSAYILAN PARA BİRİMİ</label>
+            <select 
+              value={financials.currency}
+              onChange={(e) => setFinancials({...financials, currency: e.target.value})}
+              className="w-full bg-muted-bg border-none rounded-lg px-4 py-3 text-sm font-medium text-foreground outline-none focus:ring-2 focus:ring-accent/50"
+            >
+              <option value="TRY">Türk Lirası (₺)</option>
+              <option value="USD">Amerikan Doları ($)</option>
+              <option value="EUR">Euro (€)</option>
+              <option value="GBP">İngiliz Sterlini (£)</option>
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs font-bold uppercase tracking-wider text-muted mb-2">VARSAYILAN KDV ORANI (%)</label>
+            <select 
+              value={financials.defaultTaxRate}
+              onChange={(e) => setFinancials({...financials, defaultTaxRate: e.target.value})}
+              className="w-full bg-muted-bg border-none rounded-lg px-4 py-3 text-sm font-medium text-foreground outline-none focus:ring-2 focus:ring-accent/50"
+            >
+              <option value="0">%0</option>
+              <option value="1">%1</option>
+              <option value="10">%10</option>
+              <option value="18">%18</option>
+              <option value="20">%20</option>
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs font-bold uppercase tracking-wider text-muted mb-2">MALİ YIL BAŞLANGICI</label>
+            <select 
+              value={financials.fiscalYearStart}
+              onChange={(e) => setFinancials({...financials, fiscalYearStart: e.target.value})}
+              className="w-full bg-muted-bg border-none rounded-lg px-4 py-3 text-sm font-medium text-foreground outline-none focus:ring-2 focus:ring-accent/50"
+            >
+              <option value="ocak">Ocak</option>
+              <option value="nisan">Nisan</option>
+              <option value="temmuz">Temmuz</option>
+              <option value="ekim">Ekim</option>
+            </select>
+          </div>
+        </div>
+        <div className="mt-6 flex justify-end">
+          <button 
+            onClick={() => {
+              setSaved(true);
+              setTimeout(() => setSaved(false), 3000);
+            }}
+            className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-bold text-sm transition-colors shadow-lg shadow-blue-500/20"
+          >
+            Finansal Ayarları Kaydet
+          </button>
         </div>
       </div>
 

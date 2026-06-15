@@ -51,19 +51,36 @@ class _ManualEntryScreenState extends State<ManualEntryScreen> {
         _kdvCtrl.text.replaceAll('.', '').replaceAll(',', '.').trim(),
       ) ?? 0.0;
 
-      await _supabase.from('documents').insert({
+      // Sadece şemada var olan geçerli sütunları ekliyoruz
+      final docResponse = await _supabase.from('documents').insert({
         'user_id': userId,
         'name': _firmaCtrl.text.trim(),
         'amount': tutar,
-        'tax_amount': kdv,
-        'document_date': _tarih.toUtc().toIso8601String(),
         'category': _kategori,
         'belge_tipi': _belgeTipi,
         'payment_status': _odemeStatus,
+        'status': 'beklemede',
         'file_type': 'Manuel Giriş',
-        'created_at': DateTime.now().toUtc().toIso8601String(),
-        'ocr_text': _aciklamaCtrl.text.trim().isNotEmpty ? _aciklamaCtrl.text.trim() : 'Manuel olarak girildi.',
-      });
+        'created_at': _tarih.toUtc().toIso8601String(),
+      }).select().single();
+
+      final documentId = docResponse['id'];
+
+      // Açıklama veya KDV girildiyse ek verileri extracted_data tablosuna yazıyoruz
+      if (_aciklamaCtrl.text.trim().isNotEmpty || kdv > 0) {
+        final rawText = _aciklamaCtrl.text.trim().isNotEmpty 
+            ? _aciklamaCtrl.text.trim() 
+            : 'Manuel olarak girildi. KDV: ₺$kdv';
+
+        await _supabase.from('extracted_data').insert({
+          'document_id': documentId,
+          'vendor_name': _firmaCtrl.text.trim(),
+          'invoice_date': _tarih.toUtc().toIso8601String().substring(0, 10),
+          'total_amount': tutar,
+          'raw_text': rawText,
+          'processing_model': 'manual-entry',
+        });
+      }
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(

@@ -84,13 +84,45 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
               ),
               child: Center(
                 child: Container(
-                  width: 70,
-                  height: 70,
+                  width: 76,
+                  height: 76,
                   decoration: BoxDecoration(
-                    color: const Color(0xFF0052FF), // Primary Blue
-                    borderRadius: BorderRadius.circular(18),
+                    color: const Color(0xFF0052FF),
+                    borderRadius: BorderRadius.circular(22),
                   ),
-                  child: const Icon(Icons.account_balance_wallet, color: Colors.white, size: 36),
+                  padding: const EdgeInsets.all(18),
+                  child: Container(
+                    decoration: BoxDecoration(
+                      border: Border.all(color: Colors.white, width: 4.5),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Row(
+                      children: [
+                        // Sol bölme çizgisi
+                        Container(
+                          width: 14,
+                          decoration: const BoxDecoration(
+                            border: Border(
+                              right: BorderSide(color: Colors.white, width: 4.5),
+                            ),
+                          ),
+                        ),
+                        // Sağ çıtçıt düğme kısmı
+                        Expanded(
+                          child: Center(
+                            child: Container(
+                              width: 8,
+                              height: 8,
+                              decoration: const BoxDecoration(
+                                color: Colors.white,
+                                shape: BoxShape.circle,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
                 ),
               ),
             ),
@@ -105,12 +137,12 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
             ),
             const SizedBox(height: 8),
             Text(
-              'PRECISION FINANCE',
+              'FİNANSAL ZEKA & ANALİZ',
               style: GoogleFonts.inter(
-                fontSize: 12,
-                letterSpacing: 3,
-                fontWeight: FontWeight.w600,
-                color: Colors.grey.shade500,
+                fontSize: 11,
+                fontWeight: FontWeight.bold,
+                color: const Color(0xFF0052FF),
+                letterSpacing: 1.5,
               ),
             ),
             const Spacer(flex: 2),
@@ -149,7 +181,7 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
                   const Icon(Icons.security, color: Color(0xFF0052FF), size: 16),
                   const SizedBox(width: 8),
                   Text(
-                    '256-bit Encrypted Vault',
+                    'Askeri Sınıf Veri Güvenliği',
                     style: TextStyle(
                       fontSize: 12,
                       fontWeight: FontWeight.w600,

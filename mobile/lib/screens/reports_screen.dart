@@ -217,7 +217,7 @@ $dataStr
               'Content-Type': 'application/json',
             },
             body: jsonEncode({
-              'model': 'llama3-8b-8192',
+              'model': 'llama-3.1-8b-instant',
               'messages': [
                 {'role': 'user', 'content': prompt}
               ],
@@ -333,7 +333,7 @@ $dataStr
             'Content-Type': 'application/json',
           },
           body: jsonEncode({
-            'model': 'llama3-8b-8192',
+            'model': 'llama-3.1-8b-instant',
             'messages': [
               {'role': 'user', 'content': prompt}
             ],
@@ -662,7 +662,7 @@ $dataStr
                 children: [
                   // Title Section
                   Text(
-                    'Finansal\nAnaliz &\nUyum',
+                    'Finansal\nRaporlar &\nAnalizler',
                     style: TextStyle(
                       fontSize: 36,
                       fontWeight: FontWeight.w900,
@@ -774,6 +774,7 @@ $dataStr
                       ),
                     ),
                   ),
+                  const SizedBox(height: 38),
 
                   // Gelir & Gider Analizi Section
                   Row(

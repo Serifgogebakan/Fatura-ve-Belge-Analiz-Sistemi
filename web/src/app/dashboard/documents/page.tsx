@@ -17,6 +17,7 @@ type Document = {
   amount: number | null;
   currency: string;
   payment_status: string;
+  belge_tipi: string;
   created_at: string;
 };
 
@@ -31,7 +32,38 @@ export default function DocumentsPage() {
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
   const [documentToDelete, setDocumentToDelete] = useState<Document | null>(null);
   const [openDropdownId, setOpenDropdownId] = useState<string | null>(null);
-  const [filter, setFilter] = useState<"all" | "FATURA" | "MAKBUZ">("all");
+  
+  // Manuel Giriş State'leri
+  const [manualEntryOpen, setManualEntryOpen] = useState(false);
+  const [manualSaving, setManualSaving] = useState(false);
+  const [manualForm, setManualForm] = useState({
+    name: "",
+    category: "Fatura",
+    amount: "",
+    currency: "TRY",
+    payment_status: "beklemede",
+    belge_tipi: "gider",
+    created_at: new Date().toISOString().split("T")[0]
+  });
+  
+  // Düzenleme State'leri
+  const [isEditing, setIsEditing] = useState(false);
+  const [editSaving, setEditSaving] = useState(false);
+  const [editForm, setEditForm] = useState({
+    name: "",
+    category: "Fatura",
+    amount: "",
+    currency: "TRY",
+    payment_status: "beklemede",
+    belge_tipi: "gider",
+    created_at: ""
+  });
+
+  // Detay Modalı State
+  const [selectedDocument, setSelectedDocument] = useState<Document | null>(null);
+
+  const [filterType, setFilterType] = useState<"all" | "gelir" | "gider">("all");
+  const [filterCategory, setFilterCategory] = useState<string>("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
   const perPage = 4;
@@ -61,8 +93,9 @@ export default function DocumentsPage() {
           status: d.status || "",
           amount: d.totalAmount || 0,
           currency: d.currency || "TRY",
-          payment_status: d.status || "",
-          created_at: d.uploadedAt || new Date().toISOString()
+          payment_status: d.payment_status || d.status || "beklemede",
+          belge_tipi: d.belge_tipi || "gider",
+          created_at: d.uploadedAt || d.created_at || new Date().toISOString()
         }));
         setDocuments(mappedData);
       }
@@ -139,14 +172,112 @@ export default function DocumentsPage() {
     }
   }
 
+  async function handleManualSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    const userDataStr = localStorage.getItem('user');
+    if (!userDataStr) return;
+    const user = JSON.parse(userDataStr);
+
+    setManualSaving(true);
+    try {
+      const { data, error } = await supabase
+        .from('documents')
+        .insert({
+          user_id: user.id,
+          name: manualForm.name,
+          original_filename: manualForm.name,
+          file_type: "manual",
+          category: manualForm.category,
+          belge_tipi: manualForm.belge_tipi,
+          amount: parseFloat(manualForm.amount) || 0,
+          currency: manualForm.currency,
+          payment_status: manualForm.payment_status,
+          status: "tamamlandı",
+          created_at: manualForm.created_at
+        })
+        .select()
+        .single();
+
+      if (error) throw error;
+      
+      setUploadSuccess(true);
+      setTimeout(() => setUploadSuccess(false), 3000);
+      setManualEntryOpen(false);
+      fetchDocuments();
+    } catch (err: any) {
+      alert("Kayıt sırasında hata oluştu: " + err.message);
+    } finally {
+      setManualSaving(false);
+    }
+  }
+
+  const startEditing = () => {
+    if (!selectedDocument) return;
+    setEditForm({
+      name: selectedDocument.name,
+      category: selectedDocument.category || "Fatura",
+      amount: selectedDocument.amount?.toString() || "0",
+      currency: selectedDocument.currency || "TRY",
+      payment_status: selectedDocument.payment_status || "beklemede",
+      belge_tipi: selectedDocument.belge_tipi || "gider",
+      created_at: selectedDocument.created_at ? new Date(selectedDocument.created_at).toISOString().split('T')[0] : new Date().toISOString().split('T')[0]
+    });
+    setIsEditing(true);
+  };
+
+  async function handleEditSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!selectedDocument) return;
+    setEditSaving(true);
+    try {
+      const updatedFields = {
+        name: editForm.name,
+        category: editForm.category,
+        amount: parseFloat(editForm.amount) || 0,
+        currency: editForm.currency,
+        payment_status: editForm.payment_status,
+        belge_tipi: editForm.belge_tipi,
+        created_at: new Date(editForm.created_at).toISOString()
+      };
+
+      const { error } = await supabase
+        .from('documents')
+        .update(updatedFields)
+        .eq('id', selectedDocument.id);
+
+      if (error) throw error;
+
+      // Local state'i güncelle
+      const updatedDoc = {
+        ...selectedDocument,
+        name: editForm.name,
+        category: editForm.category,
+        amount: parseFloat(editForm.amount) || 0,
+        currency: editForm.currency,
+        payment_status: editForm.payment_status,
+        belge_tipi: editForm.belge_tipi,
+        created_at: new Date(editForm.created_at).toISOString()
+      };
+      
+      setSelectedDocument(updatedDoc);
+      setDocuments(docs => docs.map(d => d.id === selectedDocument.id ? updatedDoc : d));
+      setIsEditing(false);
+    } catch (err: any) {
+      alert("Güncelleme sırasında hata oluştu: " + err.message);
+    } finally {
+      setEditSaving(false);
+    }
+  }
+
   // Filtreleme ve arama
   const filtered = documents.filter((doc) => {
-    const matchesFilter = filter === "all" || doc.category === filter;
+    const matchesType = filterType === "all" || doc.belge_tipi === filterType;
+    const matchesCat = filterCategory === "all" || doc.category === filterCategory;
     const matchesSearch = !searchQuery || 
       doc.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       doc.original_filename?.toLowerCase().includes(searchQuery.toLowerCase()) ||
       doc.category?.toLowerCase().includes(searchQuery.toLowerCase());
-    return matchesFilter && matchesSearch;
+    return matchesType && matchesCat && matchesSearch;
   });
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / perPage));
@@ -167,6 +298,7 @@ export default function DocumentsPage() {
     switch (type) {
       case "pdf": return <FileText className="text-blue-600 w-6 h-6" />;
       case "image": return <FileArchive className="text-orange-600 w-6 h-6" />;
+      case "manual": return <FileSpreadsheet className="text-emerald-600 w-6 h-6" />;
       default: return <FileSpreadsheet className="text-indigo-600 w-6 h-6" />;
     }
   }
@@ -175,6 +307,7 @@ export default function DocumentsPage() {
     switch (type) {
       case "pdf": return "bg-blue-500/10";
       case "image": return "bg-orange-500/10";
+      case "manual": return "bg-emerald-500/10";
       default: return "bg-indigo-500/10";
     }
   }
@@ -227,15 +360,24 @@ export default function DocumentsPage() {
         <div className="flex items-center gap-3">
           <button className="flex items-center gap-2 px-4 py-2.5 bg-muted-bg text-foreground font-semibold rounded-xl hover:bg-border transition-colors text-sm border border-transparent hover:border-border">
             <Download size={18} />
-            Tümünü İndir
+            <span className="hidden sm:inline">İndir</span>
           </button>
+          
+          <button 
+            onClick={() => setManualEntryOpen(true)}
+            className="flex items-center gap-2 px-4 py-2.5 bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 font-semibold rounded-xl hover:bg-blue-200 dark:hover:bg-blue-900/50 transition-colors text-sm"
+          >
+            <FileSpreadsheet size={18} />
+            <span className="hidden sm:inline">Manuel Giriş</span>
+          </button>
+
           <button 
             onClick={() => fileInputRef.current?.click()}
             disabled={uploading}
             className="flex items-center gap-2 px-5 py-2.5 bg-accent text-accent-fg font-semibold rounded-xl shadow-lg shadow-accent/20 hover:opacity-90 transition-all text-sm disabled:opacity-50"
           >
             {uploading ? <Loader2 size={18} className="animate-spin" /> : <Plus size={18} />}
-            {uploading ? "Yükleniyor..." : "Yeni Yükle"}
+            {uploading ? "Yükleniyor..." : <span className="hidden sm:inline">Yeni Yükle</span>}
           </button>
         </div>
       </div>
@@ -252,18 +394,32 @@ export default function DocumentsPage() {
             className="w-full bg-muted-bg/50 border border-border rounded-xl pl-10 pr-4 py-2.5 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-accent/50 transition-shadow"
           />
         </div>
-        <div className="flex items-center bg-muted-bg/50 p-1 rounded-xl border border-border w-full md:w-auto">
-          {(["all", "FATURA", "MAKBUZ"] as const).map((f) => (
-            <button
-              key={f}
-              onClick={() => { setFilter(f); setCurrentPage(1); }}
-              className={`flex-1 md:flex-none px-6 py-2 rounded-lg text-sm font-semibold transition-colors ${
-                filter === f ? "bg-card text-foreground shadow-sm" : "text-muted hover:text-foreground"
-              }`}
-            >
-              {f === "all" ? "Tümü" : f === "FATURA" ? "Faturalar" : "Makbuzlar"}
-            </button>
-          ))}
+        <div className="flex flex-col sm:flex-row items-center gap-3 w-full md:w-auto">
+          {/* Gelir/Gider Filter */}
+          <div className="flex items-center bg-muted-bg/50 p-1 rounded-xl border border-border w-full sm:w-auto">
+            {(["all", "gelir", "gider"] as const).map((f) => (
+              <button
+                key={f}
+                onClick={() => { setFilterType(f); setCurrentPage(1); }}
+                className={`flex-1 sm:flex-none px-4 py-2 rounded-lg text-sm font-semibold transition-colors ${
+                  filterType === f ? (f==='gelir' ? 'bg-emerald-500 text-white shadow-sm' : f==='gider' ? 'bg-red-500 text-white shadow-sm' : 'bg-card text-foreground shadow-sm') : "text-muted hover:text-foreground"
+                }`}
+              >
+                {f === "all" ? "Tümü" : f === "gelir" ? "Gelir" : "Gider"}
+              </button>
+            ))}
+          </div>
+          {/* Kategori Seçici */}
+          <select 
+            value={filterCategory} 
+            onChange={(e) => { setFilterCategory(e.target.value); setCurrentPage(1); }}
+            className="w-full sm:w-auto bg-muted-bg/50 border border-border rounded-xl px-4 py-2.5 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-accent/50"
+          >
+            <option value="all">Tüm Kategoriler</option>
+            {Array.from(new Set(documents.map(d => d.category).filter(Boolean))).map(c => (
+              <option key={c} value={c}>{c}</option>
+            ))}
+          </select>
         </div>
       </div>
 
@@ -300,7 +456,11 @@ export default function DocumentsPage() {
                   {paginated.map((doc) => {
                     const payment = getPaymentStyle(doc.payment_status);
                     return (
-                      <tr key={doc.id} className="hover:bg-muted-bg/30 transition-colors group cursor-pointer">
+                      <tr 
+                        key={doc.id} 
+                        onClick={() => setSelectedDocument(doc)}
+                        className={`hover:bg-muted-bg/30 transition-colors group cursor-pointer ${doc.belge_tipi === 'gelir' ? 'border-l-2 border-l-emerald-500/50' : 'border-l-2 border-l-red-500/20'}`}
+                      >
                         <td className="px-6 py-4">
                           <div className="flex items-center gap-4">
                             <div className={`w-12 h-12 rounded-xl flex items-center justify-center shrink-0 ${getDocBg(doc.file_type)}`}>
@@ -318,8 +478,14 @@ export default function DocumentsPage() {
                             {doc.category || "DİĞER"}
                           </span>
                         </td>
-                        <td className="px-6 py-4 font-bold text-foreground text-sm">
-                          {doc.amount ? `₺${formatCurrency(doc.amount)}` : "—"}
+                        <td className="px-6 py-4 font-bold text-sm">
+                          <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold ${
+                            doc.belge_tipi === 'gelir'
+                              ? 'bg-emerald-500/10 text-emerald-500 border border-emerald-500/20'
+                              : 'bg-red-500/10 text-red-400 border border-red-500/20'
+                          }`}>
+                            {doc.belge_tipi === 'gelir' ? '+' : '-'}₺{formatCurrency(doc.amount || 0)}
+                          </span>
                         </td>
                         <td className="px-6 py-4" onClick={(e) => e.stopPropagation()}>
                           <div className="relative">
@@ -481,6 +647,299 @@ export default function DocumentsPage() {
                 Sil
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Manual Entry Modal */}
+      {manualEntryOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+          <div className="bg-card border border-border p-6 rounded-2xl shadow-2xl max-w-md w-full animate-in fade-in zoom-in duration-200">
+            <div className="flex justify-between items-center mb-6">
+              <h3 className="text-xl font-bold text-foreground flex items-center gap-2">
+                <FileSpreadsheet className="text-blue-600" size={24} />
+                Manuel Veri Girişi
+              </h3>
+              <button onClick={() => setManualEntryOpen(false)} className="text-muted hover:text-foreground">
+                <X size={24} />
+              </button>
+            </div>
+
+            <form onSubmit={handleManualSubmit} className="space-y-4">
+              <div>
+                <label className="block text-xs font-bold uppercase text-muted mb-1.5">Kayıt / Belge Adı</label>
+                <input 
+                  required type="text" 
+                  value={manualForm.name} onChange={(e) => setManualForm({...manualForm, name: e.target.value})}
+                  className="w-full bg-muted-bg border-none rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-blue-500" 
+                  placeholder="Örn: Ofis Kırtasiye Gideri"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-bold uppercase text-muted mb-1.5">Tutar</label>
+                  <div className="relative">
+                    <span className="absolute left-4 top-1/2 -translate-y-1/2 text-muted font-bold">₺</span>
+                    <input 
+                      required type="number" step="0.01"
+                      value={manualForm.amount} onChange={(e) => setManualForm({...manualForm, amount: e.target.value})}
+                      className="w-full bg-muted-bg border-none rounded-xl pl-9 pr-4 py-3 text-sm focus:ring-2 focus:ring-blue-500 font-bold" 
+                      placeholder="0.00"
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-xs font-bold uppercase text-muted mb-1.5">İşlem Tipi</label>
+                  <select 
+                    value={manualForm.belge_tipi} onChange={(e) => setManualForm({...manualForm, belge_tipi: e.target.value})}
+                    className="w-full bg-muted-bg border-none rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-blue-500 font-bold"
+                  >
+                    <option value="gider">Gider</option>
+                    <option value="gelir">Gelir</option>
+                  </select>
+                </div>
+              </div>
+              
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-bold uppercase text-muted mb-1.5">Tarih</label>
+                  <input 
+                    required type="date" 
+                    value={manualForm.created_at} onChange={(e) => setManualForm({...manualForm, created_at: e.target.value})}
+                    className="w-full bg-muted-bg border-none rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold uppercase text-muted mb-1.5">Kategori</label>
+                  <select 
+                    value={manualForm.category} onChange={(e) => setManualForm({...manualForm, category: e.target.value})}
+                    className="w-full bg-muted-bg border-none rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-blue-500 font-bold"
+                  >
+                    <option value="Maaş">Maaş</option>
+                    <option value="Kira">Kira</option>
+                    <option value="Fatura">Fatura</option>
+                    <option value="Market">Market</option>
+                    <option value="Vergi">Vergi</option>
+                    <option value="Diğer">Diğer</option>
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold uppercase text-muted mb-1.5">Ödeme Durumu</label>
+                <select 
+                  value={manualForm.payment_status} onChange={(e) => setManualForm({...manualForm, payment_status: e.target.value})}
+                  className="w-full bg-muted-bg border-none rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-blue-500 font-bold"
+                >
+                  <option value="ödendi">Ödendi</option>
+                  <option value="beklemede">Beklemede</option>
+                  <option value="incelemede">İncelemede</option>
+                </select>
+              </div>
+
+              <div className="pt-4 flex gap-3">
+                <button 
+                  type="button" onClick={() => setManualEntryOpen(false)}
+                  className="flex-1 py-3 rounded-xl font-bold bg-muted-bg hover:bg-border transition-colors text-foreground"
+                >
+                  İptal
+                </button>
+                <button 
+                  type="submit" disabled={manualSaving}
+                  className="flex-1 py-3 rounded-xl font-bold bg-blue-600 hover:bg-blue-700 transition-colors text-white shadow-lg shadow-blue-500/20 flex items-center justify-center gap-2"
+                >
+                  {manualSaving && <Loader2 size={18} className="animate-spin" />}
+                  {manualSaving ? "Kaydediliyor..." : "Kaydet"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+      {/* Document Detail Modal */}
+      {selectedDocument && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+          <div className="bg-card border border-border p-6 rounded-2xl shadow-2xl max-w-lg w-full animate-in fade-in zoom-in duration-200">
+            {isEditing ? (
+              <form onSubmit={handleEditSubmit} className="space-y-4">
+                <div className="flex justify-between items-center mb-2">
+                  <h3 className="text-xl font-bold text-foreground flex items-center gap-2">
+                    <FileSpreadsheet className="text-blue-600" size={24} />
+                    Belgeyi Düzenle
+                  </h3>
+                  <button type="button" onClick={() => { setIsEditing(false); }} className="text-muted hover:text-foreground">
+                    <X size={24} />
+                  </button>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold uppercase text-muted mb-1.5">Kayıt / Belge Adı</label>
+                  <input 
+                    required type="text" 
+                    value={editForm.name} onChange={(e) => setEditForm({...editForm, name: e.target.value})}
+                    className="w-full bg-muted-bg border border-border rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-blue-500 text-foreground" 
+                    placeholder="Örn: Ofis Kırtasiye Gideri"
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-bold uppercase text-muted mb-1.5">Tutar</label>
+                    <div className="relative">
+                      <span className="absolute left-4 top-1/2 -translate-y-1/2 text-muted font-bold">₺</span>
+                      <input 
+                        required type="number" step="0.01"
+                        value={editForm.amount} onChange={(e) => setEditForm({...editForm, amount: e.target.value})}
+                        className="w-full bg-muted-bg border border-border rounded-xl pl-9 pr-4 py-3 text-sm focus:ring-2 focus:ring-blue-500 font-bold text-foreground" 
+                        placeholder="0.00"
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold uppercase text-muted mb-1.5">İşlem Tipi</label>
+                    <select 
+                      value={editForm.belge_tipi} onChange={(e) => setEditForm({...editForm, belge_tipi: e.target.value})}
+                      className="w-full bg-muted-bg border border-border rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-blue-500 font-bold text-foreground"
+                    >
+                      <option value="gider">Gider</option>
+                      <option value="gelir">Gelir</option>
+                    </select>
+                  </div>
+                </div>
+                
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-bold uppercase text-muted mb-1.5">Tarih</label>
+                    <input 
+                      required type="date" 
+                      value={editForm.created_at} onChange={(e) => setEditForm({...editForm, created_at: e.target.value})}
+                      className="w-full bg-muted-bg border border-border rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-blue-500 text-foreground"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold uppercase text-muted mb-1.5">Kategori</label>
+                    <select 
+                      value={editForm.category} onChange={(e) => setEditForm({...editForm, category: e.target.value})}
+                      className="w-full bg-muted-bg border border-border rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-blue-500 font-bold text-foreground"
+                    >
+                      <option value="Maaş">Maaş</option>
+                      <option value="Kira">Kira</option>
+                      <option value="Fatura">Fatura</option>
+                      <option value="Market">Market</option>
+                      <option value="Vergi">Vergi</option>
+                      <option value="Diğer">Diğer</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold uppercase text-muted mb-1.5">Ödeme Durumu</label>
+                  <select 
+                    value={editForm.payment_status} onChange={(e) => setEditForm({...editForm, payment_status: e.target.value})}
+                    className="w-full bg-muted-bg border border-border rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-blue-500 font-bold text-foreground"
+                  >
+                    <option value="ödendi">Ödendi</option>
+                    <option value="beklemede">Beklemede</option>
+                    <option value="incelemede">İncelemede</option>
+                  </select>
+                </div>
+
+                <div className="pt-4 flex gap-3">
+                  <button 
+                    type="button" onClick={() => { setIsEditing(false); }}
+                    className="flex-1 py-3 rounded-xl font-bold bg-muted-bg hover:bg-border transition-colors text-foreground"
+                  >
+                    İptal
+                  </button>
+                  <button 
+                    type="submit" disabled={editSaving}
+                    className="flex-1 py-3 rounded-xl font-bold bg-blue-600 hover:bg-blue-700 transition-colors text-white shadow-lg shadow-blue-500/20 flex items-center justify-center gap-2"
+                  >
+                    {editSaving && <Loader2 size={18} className="animate-spin" />}
+                    {editSaving ? "Kaydediliyor..." : "Kaydet"}
+                  </button>
+                </div>
+              </form>
+            ) : (
+              <>
+                <div className="flex justify-between items-start mb-6">
+                  <div className="flex items-center gap-4">
+                    <div className={`w-14 h-14 rounded-xl flex items-center justify-center shrink-0 ${getDocBg(selectedDocument.file_type)}`}>
+                      {getDocIcon(selectedDocument.file_type)}
+                    </div>
+                    <div>
+                      <h3 className="text-xl font-bold text-foreground mb-1">{selectedDocument.name}</h3>
+                      <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold bg-muted-bg text-muted border border-border">
+                        {selectedDocument.category || "DİĞER"}
+                      </span>
+                    </div>
+                  </div>
+                  <button onClick={() => { setSelectedDocument(null); }} className="text-muted hover:text-foreground">
+                    <X size={24} />
+                  </button>
+                </div>
+
+                <div className="space-y-4 mb-8">
+                  <div className="bg-muted-bg/50 p-4 rounded-xl border border-border">
+                    <p className="text-xs font-bold text-muted uppercase tracking-wider mb-1">Tutar & Tip</p>
+                    <div className="flex items-end justify-between">
+                      <p className="text-2xl font-extrabold text-foreground">₺{formatCurrency(selectedDocument.amount || 0)}</p>
+                      <span className={`text-sm font-bold px-3 py-1 rounded-full ${selectedDocument.belge_tipi === 'gelir' ? 'bg-emerald-500/10 text-emerald-600' : 'bg-red-500/10 text-red-600'}`}>
+                        {selectedDocument.belge_tipi === 'gelir' ? 'GELİR' : 'GİDER'}
+                      </span>
+                    </div>
+                  </div>
+                  
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="bg-muted-bg/30 p-4 rounded-xl border border-border">
+                      <p className="text-xs font-bold text-muted uppercase tracking-wider mb-1">Tarih</p>
+                      <p className="font-semibold text-foreground text-sm">{formatDate(selectedDocument.created_at)}</p>
+                    </div>
+                    <div className="bg-muted-bg/30 p-4 rounded-xl border border-border">
+                      <p className="text-xs font-bold text-muted uppercase tracking-wider mb-1">Ödeme Durumu</p>
+                      <div className="flex items-center gap-2">
+                        <span className={`w-2 h-2 rounded-full ${getPaymentStyle(selectedDocument.payment_status).dot}`}></span>
+                        <p className={`font-semibold text-sm ${getPaymentStyle(selectedDocument.payment_status).color}`}>
+                          {getPaymentStyle(selectedDocument.payment_status).text}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex gap-3 pt-2 border-t border-border">
+                  <button 
+                    onClick={startEditing}
+                    className="flex-1 py-3 rounded-xl font-bold bg-blue-600 hover:bg-blue-700 transition-colors text-white flex items-center justify-center gap-2"
+                  >
+                    Düzenle
+                  </button>
+                  {selectedDocument.cloudinary_secure_url && (
+                    <a 
+                      href={selectedDocument.cloudinary_secure_url} 
+                      target="_blank" 
+                      rel="noopener noreferrer"
+                      className="flex-1 py-3 rounded-xl font-bold bg-muted-bg hover:bg-border transition-colors text-foreground flex items-center justify-center gap-2 border border-border"
+                    >
+                      <Download size={18} />
+                      İndir
+                    </a>
+                  )}
+                  <button 
+                    onClick={() => {
+                      setDocumentToDelete(selectedDocument);
+                      setSelectedDocument(null);
+                      setDeleteModalOpen(true);
+                    }}
+                    className="py-3 px-4 rounded-xl font-bold bg-red-500/10 text-red-600 hover:bg-red-500/20 transition-colors flex items-center justify-center gap-2"
+                    title="Sil"
+                  >
+                    <Trash2 size={18} />
+                  </button>
+                </div>
+              </>
+            )}
           </div>
         </div>
       )}

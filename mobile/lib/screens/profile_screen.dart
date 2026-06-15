@@ -22,6 +22,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   String _fullName = '';
   String _email = '';
   String? _avatarUrl;
+  String _companyName = '';
   bool _isLoading = true;
   bool _isUploadingAvatar = false;
 
@@ -37,7 +38,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     try {
       final data = await _supabase
           .from('profiles')
-          .select('full_name, avatar_cloudinary_url')
+          .select('full_name, avatar_cloudinary_url, company_name')
           .eq('id', user.id)
           .maybeSingle();
 
@@ -48,6 +49,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
             user.userMetadata?['full_name'] as String? ??
             'Kullanıcı';
         _avatarUrl = data?['avatar_cloudinary_url'] as String?;
+        _companyName = (data?['company_name'] as String?) ?? '';
         _isLoading = false;
       });
     } catch (_) {
@@ -56,6 +58,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
         _fullName =
             _supabase.auth.currentUser?.userMetadata?['full_name'] as String? ??
             'Kullanıcı';
+        _companyName = '';
         _isLoading = false;
       });
     }
@@ -279,17 +282,19 @@ class _ProfileScreenState extends State<ProfileScreen> {
               )
             else
               Text(
-                _fullName,
+                _companyName.isNotEmpty ? _companyName : _fullName,
                 style: TextStyle(
                   fontSize: 22,
                   fontWeight: FontWeight.bold,
                   color: textColor,
                 ),
+                textAlign: TextAlign.center,
               ),
             const SizedBox(height: 4),
             Text(
-              _email,
+              _companyName.isNotEmpty ? '$_fullName • $_email' : _email,
               style: TextStyle(fontSize: 13, color: Colors.grey.shade500),
+              textAlign: TextAlign.center,
             ),
             const SizedBox(height: 20),
 
@@ -384,6 +389,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   label: 'Güvenlik',
                   onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const SecurityScreen())),
                 ),
+                _MenuItem(
+                  icon: Icons.dark_mode_outlined,
+                  label: 'Tema Ayarları',
+                  onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const ThemeSettingsScreen())),
+                ),
               ],
             ),
             const SizedBox(height: 24),
@@ -458,7 +468,36 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
+  String _getInitials(String name) {
+    if (name.trim().isEmpty) return '';
+    List<String> words = name.trim().split(RegExp(r'\s+'));
+    String initials = '';
+    if (words.isNotEmpty && words[0].isNotEmpty) {
+      initials += words[0][0].toUpperCase();
+    }
+    if (words.length > 1 && words[1].isNotEmpty) {
+      initials += words[1][0].toUpperCase();
+    }
+    return initials;
+  }
+
   Widget _defaultAvatar(Color primaryColor) {
+    final initials = _getInitials(_companyName.isNotEmpty ? _companyName : _fullName);
+    if (initials.isNotEmpty) {
+      return Container(
+        color: primaryColor.withOpacity(0.1),
+        child: Center(
+          child: Text(
+            initials,
+            style: TextStyle(
+              fontSize: 32,
+              fontWeight: FontWeight.bold,
+              color: primaryColor,
+            ),
+          ),
+        ),
+      );
+    }
     return Container(
       color: primaryColor.withOpacity(0.1),
       child: Icon(Icons.person, size: 46, color: primaryColor),

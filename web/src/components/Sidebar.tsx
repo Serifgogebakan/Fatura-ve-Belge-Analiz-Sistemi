@@ -5,14 +5,13 @@ import { usePathname, useRouter } from "next/navigation";
 import { useState, useEffect } from "react";
 import { supabase } from "@/lib/supabase";
 import { 
-  Building2, 
+  Zap, 
   LayoutDashboard, 
   LineChart, 
   FolderDown, 
-  LockKeyhole, 
-  Users, 
   LogOut,
-  Settings
+  Settings,
+  Wallet
 } from "lucide-react";
 
 export default function Sidebar() {
@@ -53,10 +52,9 @@ export default function Sidebar() {
 
   const navItems = [
     { href: "/dashboard", label: "Genel Bakış", icon: LayoutDashboard },
-    { href: "/dashboard/analytics", label: "Analitik", icon: LineChart },
+    { href: "/dashboard/reports", label: "Raporlar", icon: LineChart },
     { href: "/dashboard/documents", label: "Belgeler Arşivi", icon: FolderDown },
-    { href: "/dashboard/vault", label: "Kasa (Vault)", icon: LockKeyhole },
-    { href: "/dashboard/team", label: "Ekip", icon: Users },
+    { href: "/dashboard/budget", label: "Bütçe Takibi", icon: Wallet },
   ];
 
   const handleLogout = () => {
@@ -72,11 +70,10 @@ export default function Sidebar() {
         <div className="h-[76px] flex items-center px-6 border-b border-border">
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 rounded-xl bg-accent flex items-center justify-center text-accent-fg shadow-sm">
-              <Building2 size={20} />
+              <Zap size={20} className="fill-current" />
             </div>
             <div>
-              <h1 className="font-extrabold text-[15px] tracking-tight leading-tight text-foreground">BillMind App</h1>
-              <p className="text-[10px] text-muted font-bold uppercase tracking-wider mt-0.5">Premium Tier</p>
+              <h1 className="font-extrabold text-[16px] tracking-tight leading-none text-foreground">BillMind App</h1>
             </div>
           </div>
         </div>
